@@ -305,6 +305,13 @@ class GeminiService {
 "وقف الموسيقى" → {"reply":"سأوقف الوسائط مؤقتاً.","actions":[{"actionType":"media_control","category":"media","targetApp":null,"parameters":{"op":"pause"},"scheduledTime":null,"requiresConfirmation":false}]}
 "ابحث عن سعر الذهب" → {"reply":"سأبحث عن سعر الذهب في المتصفح.","actions":[{"actionType":"search_web","category":"info","targetApp":null,"parameters":{"query":"سعر الذهب"},"scheduledTime":null,"requiresConfirmation":false}]}
 "كم البطارية؟" → {"reply":"البطارية عند 78 بالمئة وليست على الشاحن.","actions":[]}
+"اتصل بمحمد فتح من الشريحة 1" → {"reply":"سأتصل بمحمد فتح من الشريحة الأولى.","actions":[{"actionType":"call","category":"call","targetApp":null,"parameters":{"contactName":"محمد فتح","slotIndex":0},"scheduledTime":null,"requiresConfirmation":false}]}
+
+قواعد الاتصال وجهات الاتصال (مهمة جداً):
+- «اتصل بـX» أو «اتصل بـX من الشريحة/الشريحة رقم N/سيم N»: أرسل actionType=call مع parameters {"contactName":"X","slotIndex":N-1} — ولا تخترع رقماً.
+- الشريحة/السيم/الخط ليست تطبيقاً — لا تفتح لها تطبيقاً ولا تجعلها targetApp أبداً.
+- «ابحث في جهات الاتصال عن X واتصل به» أو «ابحث انت واتصل انت»: نفس إجراء call بالـ contactName — البحث في المتصفح ممنوع هنا.
+- استخدم phoneNumber فقط إن نطق المستخدم رقماً صريحاً.
 ''';
 
   static Future<void> loadSavedKey() async {
@@ -336,6 +343,24 @@ class GeminiService {
       final key = (map['apiKey'] as String?)?.trim();
       if (key != null && key.isNotEmpty) {
         _programmaticKey = key;
+      }
+      // ── إصلاح ذاتي: نموذج/نقطة نهاية محفوظان لمزود آخر يفسدان الطلب
+      // (مثل مفتاح Gemini مع نموذج Groq محفوظ سابقاً) — يُصححان تلقائياً ──
+      if (providerId != 'custom') {
+        final info = byId(providerId);
+        if (info.style == ConnectorStyle.gemini) {
+          if (!model.startsWith('gemini')) model = info.defaultModel;
+          if (!endpoint.contains('generativelanguage.googleapis.com')) {
+            endpoint = info.endpoint;
+          }
+        } else {
+          if (model.startsWith('gemini-')) model = info.defaultModel;
+          final defHost = Uri.tryParse(info.endpoint)?.host ?? '';
+          final curHost = Uri.tryParse(endpoint)?.host ?? '';
+          if (defHost.isNotEmpty && curHost.isNotEmpty && curHost != defHost) {
+            endpoint = info.endpoint;
+          }
+        }
       }
     } on PlatformException {
       // القناة غير جاهزة

@@ -241,7 +241,21 @@ class AgentDispatcher {
 
         // ═══ الاتصال والرسائل ═══
         case AgentActionTypes.call:
-          final phone = intent.parameters['phoneNumber']?.toString() ?? '';
+          var phone = intent.parameters['phoneNumber']?.toString() ?? '';
+          if (phone.isEmpty) {
+            // الاتصال بالاسم: يبحث الذكاء عن الرقم في جهات الاتصال أولاً
+            final contactName =
+                intent.parameters['contactName']?.toString() ?? '';
+            if (contactName.isNotEmpty) {
+              phone = await SystemBridgeService.findContactNumber(contactName);
+              if (phone.isEmpty) {
+                return _fail(
+                  intent,
+                  'لم أجد جهة اتصال باسم «$contactName» على جهازك.',
+                );
+              }
+            }
+          }
           if (phone.isEmpty) {
             return _fail(intent, 'لم يُحدد رقم للاتصال به');
           }

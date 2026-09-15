@@ -12,6 +12,7 @@ import '../services/scheduler_service.dart';
 import '../services/system_bridge_service.dart';
 import '../services/overlay_service.dart';
 import '../services/voice_service.dart';
+import '../services/voice_profiles.dart';
 
 /// شاشة الدردشة مع وكيل الأتمتة.
 class AgentChatScreen extends StatefulWidget {
@@ -115,9 +116,36 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       // ── المسار 1: المحلل المحلي + حلّ معرّف الحزمة من الجهاز ──
       // فوري ومجاني ويعمل دون إنترنت. إن فهم الأمر نفّذه مباشرة.
       var commandText = text;
+
+      // ── المسار 1: الذكاء السحابي هو المستمع الأول لأي طلب (صوت أو نص) ──
+      // يستقبل النص الخام، يصيغ الأمر الواضح، ووكيل الأتمتة ينفذه.
+      GeminiVoiceOutcome? cloud;
+      if (GeminiService.isConfigured) {
+        cloud = await GeminiService.processVoiceCommand(text);
+        if (!mounted) return;
+        if (!cloud.hasError ||
+            cloud.reply.isNotEmpty ||
+            cloud.actions.isNotEmpty) {
+          final reply = cloud.reply;
+          final actions = cloud.actions;
+          if (reply.isNotEmpty) {
+            setState(() => _entries.add(_ChatEntry.agent(text: reply)));
+            await VoiceService.speak(reply);
+          }
+          for (final actionIntent in actions) {
+            await _dispatchIntent(actionIntent);
+          }
+          if (reply.isEmpty && actions.isEmpty) {
+            setState(() => _entries.add(_ChatEntry.agent(
+                  text: 'لم يصل رد من المحرك السحابي. حاول صياغة أوضح.')));
+          }
+          return;
+        }
+      }
+
+      // ── المسار 2: المحلل المحلي الفوري + طبقة إعادة الصياغة ──
       var intent = await IntentParserService.parseLocalAsync(commandText);
       if (intent == null) {
-        // طبقة إعادة الصياغة بالذكاء قبل الاستسلام للمسارات الأخرى
         final reform = await GeminiService.reformulateCommand(text);
         if (reform != null && reform.trim().isNotEmpty) {
           commandText = reform.trim();
@@ -129,10 +157,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
         return;
       }
 
-      // ── المسار 2: الدماغ المحلي (معرفة الجهاز + الحوار العام) ──
-      // يُجرَّب قبل السحابة لأن كثيراً من الأسئلة («كم البطارية؟»
-      // «ما هي التطبيقات المثبتة؟» «من أنت؟») إجاباتها محلية أصلاً،
-      // فلا مبرر لاستدعاء مدفوع ولا لتأخير الشبكة.
+      // ── المسار 3: الدماغ المحلي (معرفة الجهاز + الحوار العام) ──
       final offline = await OfflineAssistant.respond(commandText);
       if (!mounted) return;
       if (offline.match != OfflineMatch.none) {
@@ -144,25 +169,12 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
         return;
       }
 
-      // ── المسار 3: المحرك السحابي للحوار الحر والأوامر الغامضة ──
-      if (!GeminiService.isConfigured) {
-        // لا يوجد موصل — الدماغ المحلي هو الرد النهائي (لا طريق مسدود)
-        setState(() => _entries.add(_ChatEntry.agent(text: offline.displayText)));
-        if (offline.reply.isNotEmpty) await VoiceService.speak(offline.reply);
-        return;
-      }
-
-      final outcome = await GeminiService.processVoiceCommand(commandText);
-      if (!mounted) return;
-
-      // ── فشل الموصل: نحوّله إلى رد مفيد بدل الطريق المسدود ──
-      if (outcome.hasError &&
-          outcome.reply.isEmpty &&
-          outcome.actions.isEmpty) {
+      // ── المسار 4: الموصل فشل أو غائب — رد محلي مفيد ──
+      if (cloud != null) {
         final recovered = await OfflineAssistant.recoverFromConnectorFailure(
           text,
-          outcome.error,
-          statusCode: outcome.statusCode,
+          cloud.error,
+          statusCode: cloud.statusCode,
         );
         if (!mounted) return;
         setState(() {
@@ -173,27 +185,8 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
         }
         return;
       }
-
-      if (outcome.reply.isNotEmpty) {
-        setState(() => _entries.add(_ChatEntry.agent(text: outcome.reply)));
-        await VoiceService.speak(outcome.reply);
-      }
-
-      for (final actionIntent in outcome.actions) {
-        await _dispatchIntent(actionIntent);
-      }
-
-      if (outcome.reply.isEmpty && outcome.actions.isEmpty) {
-        setState(() {
-          _entries.add(
-            _ChatEntry.agent(
-              text: outcome.hasError
-                  ? '⚠️ ${outcome.error}'
-                  : 'لم يصل رد من المحرك السحابي. حاول صياغة أوضح.',
-            ),
-          );
-        });
-      }
+      setState(() => _entries.add(_ChatEntry.agent(text: offline.displayText)));
+      if (offline.reply.isNotEmpty) await VoiceService.speak(offline.reply);
     } finally {
       if (mounted) {
         setState(() => _sending = false);
@@ -293,6 +286,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
   Future<void> _showSettingsDialog() async {
     await GeminiService.loadSavedKey();
     var selectedId = GeminiService.providerId;
+    var voiceProfileId = VoiceService.voiceProfile.id;
     final keyController = TextEditingController(text: GeminiService.apiKey);
     final modelController = TextEditingController(text: GeminiService.model);
     final endpointController =
@@ -446,6 +440,45 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                         : const Color(0xFFE05B4C),
                   ),
                 ),
+                const SizedBox(height: 12),
+
+                // ═══ نبرة الصوت: خمسة أنماط رجالية ═══
+                const Text(
+                  'نبرة الصوت (صوت رجالي)',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                for (final profile in VoiceProfile.all)
+                  RadioListTile<String>(
+                    value: profile.id,
+                    groupValue: voiceProfileId,
+                    activeColor: const Color(0xFF0E7C86),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      profile.label,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                    subtitle: Text(
+                      profile.description,
+                      style: const TextStyle(color: Colors.white54, fontSize: 11),
+                    ),
+                    onChanged: (id) async {
+                      if (id == null) return;
+                      final ok = await VoiceService.setVoiceProfile(id);
+                      if (!mounted) return;
+                      setDialogState(() {
+                        if (ok) voiceProfileId = id;
+                      });
+                      _showSnack(ok
+                          ? 'اعتُمدت النبرة: ${VoiceProfile.byId(id).label} 🔊'
+                          : 'تعذر حفظ النبرة');
+                    },
+                  ),
                 const SizedBox(height: 12),
 
                 // ═══ اختبار الموصل ═══

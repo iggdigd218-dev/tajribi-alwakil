@@ -13,6 +13,8 @@
 
     <!-- ═══════════ المرحلة 5: الصوت ═══════════ -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
@@ -83,6 +85,16 @@
         </service>
 
         <!-- ═══ المرحلة 3: مستقبل التنبيهات الدقيقة ═══ -->
+        <!-- استئناف الاستماع الدائم بعد الإقلاع — ينادى الوكيل والشاشة مقفلة -->
+        <receiver
+            android:name=".automation.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <receiver
             android:name=".automation.TaskAlarmReceiver"
             android:enabled="true"
@@ -108,7 +120,7 @@
                 <action android:name="android.service.voice.VoiceInteractionService" />
             </intent-filter>
             <meta-data
-                android:name="android.voice_interaction"
+                android:name="android.voiceinteraction"
                 android:resource="@xml/voice_interaction_service" />
         </service>
 

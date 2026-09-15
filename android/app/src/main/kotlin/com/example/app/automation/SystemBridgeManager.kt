@@ -260,6 +260,40 @@ object SystemBridgeManager : MethodChannel.MethodCallHandler {
      *
      * @param slotIndex فهرس الشريحة (0 = الشريحة الأولى، 1 = الشريحة الثانية).
      */
+    /** يبحث في جهات الاتصال عن اسم (كلي أو جزئي) ويعيد أول رقم مطابق — أو "" */
+    fun findContactNumber(name: String): String {
+        val ctx = appContext ?: return ""
+        val needle = name.trim().lowercase()
+        if (needle.isEmpty()) return ""
+        if (ctx.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return ""
+        val phone = android.provider.ContactsContract.CommonDataKinds.Phone
+        var best = ""
+        try {
+            ctx.contentResolver.query(
+                phone.CONTENT_URI,
+                arrayOf(phone.DISPLAY_NAME, phone.NUMBER),
+                null, null, null,
+            )?.use { c ->
+                val dnI = c.getColumnIndexOrThrow(phone.DISPLAY_NAME)
+                val numI = c.getColumnIndexOrThrow(phone.NUMBER)
+                while (c.moveToNext()) {
+                    val dn = c.getString(dnI)?.lowercase()?.trim() ?: continue
+                    val num = c.getString(numI)?.trim() ?: continue
+                    if (num.isEmpty()) continue
+                    if (dn == needle) return num
+                    if (best.isEmpty() &&
+                        (dn.contains(needle) || needle.contains(dn))
+                    ) best = num
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "findContactNumber فشل: $t")
+        }
+        return best
+    }
+
     fun dialCallViaSlot(phoneNumber: String, slotIndex: Int): String {
         val number = phoneNumber.replace(Regex("[^+\\d]"), "")
         if (number.isBlank()) {
@@ -546,6 +580,10 @@ object SystemBridgeManager : MethodChannel.MethodCallHandler {
                     }
                     else -> throw IllegalArgumentException("setting غير مدعوم: $setting")
                 }
+            }
+
+            "findContactNumber" -> {
+                result.success(findContactNumber(call.argument<String>("name") ?: ""))
             }
 
             "toggleMobileData" -> runOnShellThread(result) {

@@ -108,6 +108,17 @@ class SystemBridgeService {
   static Future<String> toggleWifi(bool enable) =>
       setSystemSetting(setting: 'wifi', enable: enable);
 
+  /// يبحث في جهات الاتصال عن اسم ويعيد أول رقم مطابق — فارغ إن لم يوجد.
+  static Future<String> findContactNumber(String name) async {
+    try {
+      return await _channel
+              .invokeMethod<String>('findContactNumber', {'name': name}) ??
+          '';
+    } on PlatformException {
+      return '';
+    }
+  }
+
   /// تشغيل اتصال مباشر — [slotIndex]: 0 = الشريحة 1، 1 = الشريحة 2.
   static Future<String> dialCall(String phoneNumber, {int slotIndex = 0}) =>
       setSystemSetting(

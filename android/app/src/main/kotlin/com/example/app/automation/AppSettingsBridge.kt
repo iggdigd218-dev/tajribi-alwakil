@@ -19,6 +19,7 @@ object AppSettingsBridge : MethodChannel.MethodCallHandler {
     private const val KEY_PROVIDER = "ai_provider"
     private const val KEY_ENDPOINT = "ai_endpoint"
     private const val KEY_MODEL = "ai_model"
+    private const val KEY_VOICE_PROFILE = "voice_profile"
 
     private var prefs: SharedPreferences? = null
 
@@ -48,6 +49,19 @@ object AppSettingsBridge : MethodChannel.MethodCallHandler {
             "clearGeminiApiKey" -> {
                 prefs?.edit()?.remove(KEY_API)?.apply()
                 result.success(true)
+            }
+
+            "getVoiceProfile" ->
+                result.success(prefs?.getString(KEY_VOICE_PROFILE, "calm") ?: "calm")
+
+            "setVoiceProfile" -> {
+                val id = call.argument<String>("id")
+                if (id.isNullOrBlank()) {
+                    result.error("INVALID_ARGUMENTS", "الوسيط 'id' مطلوب", null)
+                } else {
+                    prefs?.edit()?.putString(KEY_VOICE_PROFILE, id.trim())?.apply()
+                    result.success(true)
+                }
             }
 
             "getAiSettings" -> result.success(

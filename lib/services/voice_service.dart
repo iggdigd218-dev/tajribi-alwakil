@@ -6,6 +6,7 @@ import 'agent_dispatcher.dart';
 import 'gemini_service.dart';
 import 'edge_tts_service.dart';
 import 'elevenlabs_tts_service.dart';
+import 'voice_profiles.dart';
 import 'intent_parser_service.dart';
 import 'offline_assistant.dart';
 
@@ -53,6 +54,7 @@ class VoiceService {
     // المرحلة 5b: تحميل مفتاح Gemini المحفوظ محلياً (SharedPreferences)
     // ليعمل المسار السحابي في حلقة الصوت مباشرة دون إعادة الإدخال.
     await GeminiService.loadSavedKey();
+    await loadVoiceProfile();
 
     _channel.setMethodCallHandler(_handleNativeCall);
 
@@ -138,6 +140,34 @@ class VoiceService {
     }
   }
 
+  /// نمط الصوت الرجالي المختار من الإعدادات (الخمس أنماط).
+  static String _profileId = 'calm';
+  static VoiceProfile get voiceProfile => VoiceProfile.byId(_profileId);
+
+  /// قراءة النمط المحفوظ أصلياً من تفضيلات التطبيق.
+  static Future<void> loadVoiceProfile() async {
+    try {
+      final id = await _channel.invokeMethod<String>('getVoiceProfile');
+      if (id != null && id.trim().isNotEmpty) _profileId = id.trim();
+    } on PlatformException {
+      // يُترك الافتراضي
+    }
+  }
+
+  /// حفظ نمط الصوت — يعود false إن رفضت القناة الأصلية.
+  static Future<bool> setVoiceProfile(String id) async {
+    if (VoiceProfile.byId(id).id != id) return false;
+    try {
+      final ok =
+          await _channel.invokeMethod<bool>('setVoiceProfile', {'id': id}) ??
+              false;
+      if (ok) _profileId = id;
+      return ok;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   /// تفعيل/تعطيل الصوت العصبي (ElevenLabs/Edge TTS). الافتراضي: مفعّل.
   static bool neuralVoiceEnabled = true;
 
@@ -162,12 +192,16 @@ class VoiceService {
       String? path;
       var engine = 'neural';
       try {
+        final profile = voiceProfile;
         if (ElevenLabsTtsService.isConfigured) {
-          path = await ElevenLabsTtsService.synthesize(text);
+          path = await ElevenLabsTtsService.synthesize(
+            text,
+            voiceId: profile.elevenVoiceId,
+          );
           if (path != null) engine = 'elevenlabs';
         }
         if (path == null) {
-          path = await EdgeTtsService.synthesize(text);
+          path = await EdgeTtsService.synthesize(text, voice: profile.edgeVoice);
         }
         if (path != null) {
           final ok = await _channel.invokeMethod<bool>('playAudioFile', path) ??
@@ -222,15 +256,45 @@ class VoiceService {
       // الأخطاء — يُمرر للـ AI ليصوغه أمراً واضحاً قبل التحليل، فلا
       // يضطر المستخدم لتكرار طلبه. (بلا موصل = النص كما هو)
       var command = rawCommand;
+
+      // ── 1) الذكاء السحابي هو المستمع الأول (طلب المستخدم): يستقبل
+      // الطلب الخام كما نطقه المستخدم، يصيغ الأمر الواضح، والوكيل ينفذه.
+      GeminiVoiceOutcome? cloud;
+      if (GeminiService.isConfigured) {
+        cloud = await GeminiService.processVoiceCommand(command);
+        if (!cloud.hasError ||
+            cloud.reply.isNotEmpty ||
+            cloud.actions.isNotEmpty) {
+          final reply = cloud.reply;
+          final actions = cloud.actions;
+          if (reply.isNotEmpty) {
+            await speak(reply);
+            onAssistantReply?.call(reply);
+          } else if (actions.isNotEmpty) {
+            await speak('حسناً، سأنفذ الأمر الآن.');
+          }
+          for (final actionIntent in actions) {
+            final result = await AgentDispatcher.execute(actionIntent);
+            if (result.status == AgentDispatchStatus.needsConfirmation) {
+              await speak('هذه عملية مالية وتتطلب تأكيدك على الشاشة.');
+            } else if (result.status == AgentDispatchStatus.failed) {
+              await speak('تعذر تنفيذ أحد الأوامر.');
+            }
+            onVoiceCommandExecuted?.call(command, actionIntent, result);
+          }
+          return;
+        }
+      }
+
+      // ── 2) المسار المحلي السريع (عند غياب الموصل أو تعذّره) ──
       var intent = await IntentParserService.parseLocalAsync(command);
       if (intent == null) {
-        final reform = await GeminiService.reformulateCommand(rawCommand);
+        final reform = await GeminiService.reformulateCommand(command);
         if (reform != null) {
           command = reform;
           intent = await IntentParserService.parseLocalAsync(command);
         }
       }
-      // ── 1) المسار السريع: محلل محلي فوري دون إنترنت ──
       if (intent != null) {
         final result = await AgentDispatcher.execute(intent);
         await _speakResult(result);
@@ -238,9 +302,7 @@ class VoiceService {
         return;
       }
 
-      // ── 2) الدماغ المحلي: معرفة الجهاز + الحوار العام ──
-      // يُجرَّب قبل السحابة لأن إجاباته فورية ومجانية وموثوقة
-      // (البطارية، التطبيقات المثبتة، التحية، الوقت، الحساب).
+      // ── 3) الدماغ المحلي: معرفة الجهاز + الحوار العام ──
       final offline = await OfflineAssistant.respond(command);
       if (offline.match != OfflineMatch.none) {
         await speak(offline.reply);
@@ -252,30 +314,16 @@ class VoiceService {
         return;
       }
 
-      // ── 3) المسار الذكي: حوار حر أو أمر مركب عبر الموصل ──
-      if (!GeminiService.isConfigured) {
-        // لا يوجد موصل — الدماغ المحلي هو الرد النهائي، بصوت طبيعي
-        final message = offline.reply.isEmpty
-            ? 'لم أفهم هذا الأمر. اسألني «ماذا تستطيع؟» لأشرح لك.'
-            : offline.reply;
-        await speak(message);
-        onAssistantReply?.call(offline.displayText);
-        return;
-      }
-
-      final outcome = await GeminiService.processVoiceCommand(command);
-
-      if (outcome.hasError) {
-        // فشل الموصل لا يُنهي المحادثة — نتحول للدماغ المحلي
+      // ── 4) الموصل فشل أو غائب: رد محلي مفيد بدل الطريق المسدود ──
+      if (cloud != null) {
         final recovered = await OfflineAssistant.recoverFromConnectorFailure(
           command,
-          outcome.error,
-          statusCode: outcome.statusCode,
+          cloud.error,
+          statusCode: cloud.statusCode,
         );
-        // صوتياً نختصر: ننطق الرد المحلي ونذكر العطل بجملة واحدة
         final spoken = recovered.match != OfflineMatch.none
             ? recovered.reply
-            : '${OfflineAssistant.classifyError(outcome.error, statusCode: outcome.statusCode).arabic}. '
+            : '${OfflineAssistant.classifyError(cloud.error, statusCode: cloud.statusCode).arabic}. '
                 'الأوامر التنفيذية تعمل دون إنترنت.';
         await speak(spoken);
         onAssistantReply?.call(recovered.displayText);
@@ -285,26 +333,9 @@ class VoiceService {
         }
         return;
       }
-
-      // نطق الرد اللغوي فوراً
-      if (outcome.reply.isNotEmpty) {
-        await speak(outcome.reply);
-        onAssistantReply?.call(outcome.reply);
-      } else if (outcome.actions.isNotEmpty) {
-        await speak('حسناً، سأنفذ الأمر الآن.');
-      }
-
-      // تنفيذ الأوامر المرفقة — لا نكرر النطق لكل أمر إن كان الرد
-      // اللغوي كافياً، إلا عند الفشل أو الحاجة للتأكيد الأمني.
-      for (final actionIntent in outcome.actions) {
-        final result = await AgentDispatcher.execute(actionIntent);
-        if (result.status == AgentDispatchStatus.needsConfirmation) {
-          await speak('هذه عملية مالية وتتطلب تأكيدك على الشاشة.');
-        } else if (result.status == AgentDispatchStatus.failed) {
-          await speak('تعذر تنفيذ أحد الأوامر.');
-        }
-        onVoiceCommandExecuted?.call(command, actionIntent, result);
-      }
+      final message = 'لم أفهم هذا الأمر. اسألني «ماذا تستطيع؟» لأشرح لك.';
+      await speak(message);
+      onAssistantReply?.call(message);
     } finally {
       _processing = false;
     }
