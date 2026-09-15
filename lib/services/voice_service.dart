@@ -5,6 +5,7 @@ import '../models/agent_action_intent.dart';
 import 'agent_dispatcher.dart';
 import 'gemini_service.dart';
 import 'edge_tts_service.dart';
+import 'elevenlabs_tts_service.dart';
 import 'intent_parser_service.dart';
 import 'offline_assistant.dart';
 
@@ -137,7 +138,7 @@ class VoiceService {
     }
   }
 
-  /// تفعيل/تعطيل الصوت العصبي (Edge TTS). الافتراضي: مفعّل.
+  /// تفعيل/تعطيل الصوت العصبي (ElevenLabs/Edge TTS). الافتراضي: مفعّل.
   static bool neuralVoiceEnabled = true;
 
   /// آخر محرك نطق استُخدم فعلياً: 'neural' أو 'system'.
@@ -149,22 +150,30 @@ class VoiceService {
 
   /// نطق نص بصوت الوكيل الرجالي.
   ///
-  /// الأولوية للمحرك العصبي من مايكروسوفت (Edge TTS — مجاني بلا مفاتيح):
-  /// يولّد MP3 عصبياً طبيعياً (ar-SA-HamedNeural) ويشغّله المشغّل الأصلي.
-  /// عند غياب الإنترنت أو أي فشل شبكي: تراجع **تلقائي وفوري** إلى
-  /// محرك النظام المحلي (Android TTS) فلا ينقطع الكلام أبداً.
+  /// سلسلة النطق: ElevenLabs (المفتاح المدمج، multilingual v2) ←
+  /// Edge TTS العصبي المجاني (ar-SA-HamedNeural) ← محرك النظام المحلي.
+  /// التراجع تلقائي وفوري عند أي فشل فلا ينقطع الكلام أبداً، ويُعرض
+  /// سبب التراجع للمستخدم عبر onNeuralFallback.
   static Future<void> speak(String text) async {
     if (text.trim().isEmpty) return;
 
-    // 1) الصوت العصبي (AI): Edge TTS
+    // 1) الأصوات العصبية (AI): ElevenLabs أولاً ثم Edge TTS المجاني
     if (neuralVoiceEnabled) {
+      String? path;
+      var engine = 'neural';
       try {
-        final path = await EdgeTtsService.synthesize(text);
+        if (ElevenLabsTtsService.isConfigured) {
+          path = await ElevenLabsTtsService.synthesize(text);
+          if (path != null) engine = 'elevenlabs';
+        }
+        if (path == null) {
+          path = await EdgeTtsService.synthesize(text);
+        }
         if (path != null) {
           final ok = await _channel.invokeMethod<bool>('playAudioFile', path) ??
               false;
           if (ok) {
-            lastSpeechEngine = 'neural';
+            lastSpeechEngine = engine;
             return;
           }
           EdgeTtsService.lastError ??= 'رفض المشغّل الأصلي الملف';
@@ -176,7 +185,13 @@ class VoiceService {
 
     // 2) الارتداد: محرك النظام المحلي
     lastSpeechEngine = 'system';
-    final reason = EdgeTtsService.lastError ?? 'تعذر التوليد العصبي';
+    final reasons = <String>[
+      if (ElevenLabsTtsService.isConfigured &&
+          ElevenLabsTtsService.lastError != null)
+        ElevenLabsTtsService.lastError!,
+      if (EdgeTtsService.lastError != null) EdgeTtsService.lastError!,
+    ];
+    final reason = reasons.isEmpty ? 'تعذر التوليد العصبي' : reasons.join(' | ');
     onNeuralFallback?.call(reason);
     try {
       await _channel.invokeMethod<void>('speakText', text);
@@ -198,15 +213,24 @@ class VoiceService {
   //  الدورة الصوتية الكاملة
   // ═══════════════════════════════════════════
 
-  static Future<void> _processVoiceCommand(String command) async {
+  static Future<void> _processVoiceCommand(String rawCommand) async {
     // منع تداخل أمرين صوتيين أثناء المعالجة
     if (_processing) return;
     _processing = true;
     try {
+      // ── 0) طبقة إعادة الصياغة بالذكاء: نص الاستماع الصوتي كثير
+      // الأخطاء — يُمرر للـ AI ليصوغه أمراً واضحاً قبل التحليل، فلا
+      // يضطر المستخدم لتكرار طلبه. (بلا موصل = النص كما هو)
+      var command = rawCommand;
+      var intent = await IntentParserService.parseLocalAsync(command);
+      if (intent == null) {
+        final reform = await GeminiService.reformulateCommand(rawCommand);
+        if (reform != null) {
+          command = reform;
+          intent = await IntentParserService.parseLocalAsync(command);
+        }
+      }
       // ── 1) المسار السريع: محلل محلي فوري دون إنترنت ──
-      // parseLocalAsync يحلّ أيضاً معرّف حزمة التطبيق من جهاز المستخدم،
-      // فلا يفشل «افتح X» لأن الاسم لم يكن في خريطة مكتوبة يدوياً.
-      final intent = await IntentParserService.parseLocalAsync(command);
       if (intent != null) {
         final result = await AgentDispatcher.execute(intent);
         await _speakResult(result);

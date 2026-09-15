@@ -131,6 +131,18 @@
                 android:resource="@xml/recognition_service" />
         </service>
 
+        <!-- يُظهر التطبيق في قوائم المساعد الرقمي لبعض الواجهات التي تجمع
+             خدمات VoiceInteraction مع معالجي ACTION_ASSIST -->
+        <activity-alias
+            android:name=".AssistEntryAlias"
+            android:targetActivity=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

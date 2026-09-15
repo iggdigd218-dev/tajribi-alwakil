@@ -687,6 +687,78 @@ class GeminiService {
     });
   }
 
+  /// موجه طبقة إعادة الصياغة — يصلح أخطاء الاستماع الصوتي والعامية.
+  static const String _reformPrompt =
+      'أنت طبقة تصحيح أمام وكيل أتمتة أندرويد عربي. يصلك طلب المستخدم كما وصل '
+      '(قد يحتوي أخطاء تعرف صوتي أو عامية أو نقصاً). أعد صياغته في جملة واحدة '
+      'واضحة بالفصحى المبسطة تحفظ المقصود بدقة: نوع الأمر، الأرقام، أسماء '
+      'التطبيقات، الأوقات، أرقام الهواتف. أعد الجملة المصححة فقط دون مقدمات '
+      'أو شرح أو علامات اقتباس.';
+
+  /// إعادة صياغة طلب خام (نص استماع صوتي غالباً) إلى أمر قاني واضح.
+  /// يعيد null عند غياب الموصل أو أي فشل — فيُستخدم النص الأصلي.
+  static Future<String?> reformulateCommand(String raw) async {
+    final clean = raw.trim();
+    if (clean.isEmpty || !isConfigured) return null;
+    final info = currentProvider;
+    final uri = Uri.parse(_resolvedEndpoint(info));
+    final body = info.style == ConnectorStyle.gemini
+        ? jsonEncode(<String, dynamic>{
+            'systemInstruction': {
+              'parts': [
+                {'text': _reformPrompt}
+              ]
+            },
+            'contents': [
+              {
+                'role': 'user',
+                'parts': [
+                  {'text': clean}
+                ]
+              }
+            ],
+            'generationConfig': <String, dynamic>{'temperature': 0.1},
+          })
+        : jsonEncode(<String, dynamic>{
+            'model': model,
+            'messages': <Map<String, dynamic>>[
+              {'role': 'system', 'content': _reformPrompt},
+              {'role': 'user', 'content': clean},
+            ],
+            'temperature': 0.1,
+          });
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 12)
+      ..userAgent = userAgent;
+    try {
+      final request =
+          await client.postUrl(uri).timeout(const Duration(seconds: 12));
+      request.headers.set(
+        HttpHeaders.contentTypeHeader,
+        'application/json; charset=utf-8',
+      );
+      request.headers.set(info.authHeader, '${info.authPrefix}$apiKey');
+      request.add(utf8.encode(body));
+      final response =
+          await request.close().timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200) {
+        await response.drain<void>();
+        return null;
+      }
+      final text = await response.transform(utf8.decoder).join();
+      final content = info.style == ConnectorStyle.gemini
+          ? _parseGeminiResponse(text)
+          : _parseOpenAiResponse(text);
+      final out = content?.trim().replaceAll(RegExp(r'''^["«»']+|["«»']+$'''), '');
+      if (out == null || out.isEmpty || out.length > 300) return null;
+      return out;
+    } catch (_) {
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   /// قراءة نص الرد بأسلوب Chat Completions.
   static String? _parseOpenAiResponse(String responseBody) {
     final data = jsonDecode(responseBody);

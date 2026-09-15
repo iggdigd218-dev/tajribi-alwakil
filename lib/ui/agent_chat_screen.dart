@@ -114,7 +114,16 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
 
       // ── المسار 1: المحلل المحلي + حلّ معرّف الحزمة من الجهاز ──
       // فوري ومجاني ويعمل دون إنترنت. إن فهم الأمر نفّذه مباشرة.
-      final intent = await IntentParserService.parseLocalAsync(text);
+      var commandText = text;
+      var intent = await IntentParserService.parseLocalAsync(commandText);
+      if (intent == null) {
+        // طبقة إعادة الصياغة بالذكاء قبل الاستسلام للمسارات الأخرى
+        final reform = await GeminiService.reformulateCommand(text);
+        if (reform != null && reform.trim().isNotEmpty) {
+          commandText = reform.trim();
+          intent = await IntentParserService.parseLocalAsync(commandText);
+        }
+      }
       if (intent != null) {
         await _dispatchIntent(intent);
         return;
@@ -124,7 +133,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       // يُجرَّب قبل السحابة لأن كثيراً من الأسئلة («كم البطارية؟»
       // «ما هي التطبيقات المثبتة؟» «من أنت؟») إجاباتها محلية أصلاً،
       // فلا مبرر لاستدعاء مدفوع ولا لتأخير الشبكة.
-      final offline = await OfflineAssistant.respond(text);
+      final offline = await OfflineAssistant.respond(commandText);
       if (!mounted) return;
       if (offline.match != OfflineMatch.none) {
         setState(() => _entries.add(_ChatEntry.agent(text: offline.displayText)));
@@ -143,7 +152,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
         return;
       }
 
-      final outcome = await GeminiService.processVoiceCommand(text);
+      final outcome = await GeminiService.processVoiceCommand(commandText);
       if (!mounted) return;
 
       // ── فشل الموصل: نحوّله إلى رد مفيد بدل الطريق المسدود ──
