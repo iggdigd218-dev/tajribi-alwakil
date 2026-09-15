@@ -122,10 +122,16 @@ object VoiceManager : RecognitionListener {
      * عند إعادة إنشاء محرك Flutter تُحدَّث القناة فقط دون إعادة
      * بناء المحرك (TTS والاستماع يستمران).
      */
+    /** أوامر النداء التي وصلت قبل ارتباط قناة Flutter. */
+    private val pendingWakeCommands = ArrayDeque<String>(8)
+
     @JvmStatic
     fun init(context: Context, voiceChannel: MethodChannel?) {
         appContext = context.applicationContext
         channel = voiceChannel
+        if (voiceChannel != null) {
+            flushPendingWakeCommands()
+        }
         if (initialized) return
         initialized = true
 
@@ -183,6 +189,8 @@ object VoiceManager : RecognitionListener {
 
         acquireWakeLock()
         notifyListeningState(true)
+        FloatingOverlayManager.showIfPossible(context)
+        FloatingOverlayManager.setListening(true)
         Log.i(TAG, "▶ بدأ الاستماع الدائم — نادِ الوكيل بـ \"$wakeWord\"")
 
         mainHandler.post {
@@ -206,6 +214,7 @@ object VoiceManager : RecognitionListener {
         destroyRecognizer()
         releaseWakeLock()
         notifyListeningState(false)
+        FloatingOverlayManager.setListening(false)
         Log.i(TAG, "■ توقف الاستماع الدائم")
     }
 
@@ -485,6 +494,7 @@ object VoiceManager : RecognitionListener {
 
         if (!command.isNullOrBlank()) {
             Log.i(TAG, "🎙️ اسم النداء مكتشف — الأمر: \"$command\"")
+            FloatingOverlayManager.setStatus("🎙️ $command")
             invokeDart("onWakeWordTriggered", command)
         } else if (normalized.contains(normalizedWake)) {
             Log.i(TAG, "نودي باسم الوكيل دون أمر — تجاهل بهدوء")
@@ -577,11 +587,45 @@ object VoiceManager : RecognitionListener {
     /** استدعاء Dart عبر القناة — دائماً على الخيط الرئيسي. */
     private fun invokeDart(method: String, argument: Any?) {
         mainHandler.post {
+            if (method == "onWakeWordTriggered" && argument is String && channel == null) {
+                enqueueWakeCommand(argument)
+                bringAppToForeground(argument)
+                return@post
+            }
             try {
                 channel?.invokeMethod(method, argument)
             } catch (e: Exception) {
                 Log.e(TAG, "تعذر استدعاء Dart ($method): ${e.message}")
             }
+        }
+    }
+
+    private fun enqueueWakeCommand(command: String) {
+        if (pendingWakeCommands.size >= 8) pendingWakeCommands.removeFirst()
+        pendingWakeCommands.addLast(command)
+    }
+
+    private fun flushPendingWakeCommands() {
+        val ch = channel ?: return
+        while (pendingWakeCommands.isNotEmpty()) {
+            val cmd = pendingWakeCommands.removeFirst()
+            try {
+                ch.invokeMethod("onWakeWordTriggered", cmd)
+            } catch (e: Exception) {
+                Log.e(TAG, "تعذر تفريغ أمر النداء: ${e.message}")
+            }
+        }
+    }
+
+    private fun bringAppToForeground(command: String) {
+        val ctx = appContext ?: return
+        val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName) ?: return
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        launch.putExtra("pending_voice_command", command)
+        try {
+            ctx.startActivity(launch)
+        } catch (e: Exception) {
+            Log.w(TAG, "تعذر رفع التطبيق لمعالجة الأمر الصوتي: ${e.message}")
         }
     }
 

@@ -9,6 +9,7 @@ import '../services/gemini_service.dart';
 import '../services/intent_parser_service.dart';
 import '../services/scheduler_service.dart';
 import '../services/system_bridge_service.dart';
+import '../services/overlay_service.dart';
 import '../services/voice_service.dart';
 
 /// شاشة الدردشة مع وكيل الأتمتة (المرحلة 4).
@@ -414,6 +415,130 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                     ),
                     contentPadding: EdgeInsets.zero,
                   ),
+                ),
+                const Divider(color: Color(0xFF22344A), height: 28),
+
+                // ── 4) النافذة العائمة ──
+                FutureBuilder<bool>(
+                  future: OverlayService.hasOverlayPermission(),
+                  builder: (context, snap) {
+                    final granted = snap.data ?? false;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'النافذة العائمة',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          granted
+                              ? '✓ صلاحية العرض فوق التطبيقات ممنوحة'
+                              : '✗ يلزم منح صلاحية «العرض فوق التطبيقات»',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: granted
+                                ? const Color(0xFF35C77B)
+                                : const Color(0xFFE05B4C),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () async {
+                                  await OverlayService
+                                      .requestOverlayPermission();
+                                  _showSnack(
+                                      'فعّل «السماح بالعرض فوق التطبيقات» ثم ارجع');
+                                },
+                                child: const Text('منح الصلاحية'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: () async {
+                                  if (!granted) {
+                                    await OverlayService
+                                        .requestOverlayPermission();
+                                    return;
+                                  }
+                                  final showing =
+                                      await OverlayService.isOverlayShowing();
+                                  if (showing) {
+                                    await OverlayService.hideOverlay();
+                                    _showSnack('تم إخفاء النافذة العائمة');
+                                  } else {
+                                    final ok =
+                                        await OverlayService.showOverlay();
+                                    _showSnack(
+                                      ok
+                                          ? 'النوافذ العائمة ظاهرة'
+                                          : 'تعذر إظهار النافذة العائمة',
+                                    );
+                                  }
+                                },
+                                child: const Text('إظهار / إخفاء'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const Divider(color: Color(0xFF22344A), height: 28),
+
+                // ── 5) المساعد الافتراضي (VoiceInteractionService) ──
+                FutureBuilder<bool>(
+                  future: OverlayService.isDefaultAssistant(),
+                  builder: (context, snap) {
+                    final isDefault = snap.data ?? false;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'المساعد الافتراضي',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          isDefault
+                              ? '✓ هذا التطبيق هو المساعد الرقمي الافتراضي'
+                              : 'اجعله المساعد الافتراضي لاستدعائه من زر المنزل',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDefault
+                                ? const Color(0xFF35C77B)
+                                : const Color(0xFF9AAABD),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              await OverlayService.openAssistantSettings();
+                              _showSnack(
+                                  'اختر «وكيل الأتمتة» كتطبيق المساعد الرقمي');
+                            },
+                            icon: const Icon(Icons.record_voice_over, size: 16),
+                            label: const Text('فتح إعدادات المساعد'),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),

@@ -9,6 +9,7 @@ import android.provider.Settings
 import com.example.app.automation.AgentForegroundService
 import com.example.app.automation.AppSettingsBridge
 import com.example.app.automation.AutomationBridge
+import com.example.app.automation.FloatingOverlayManager
 import com.example.app.automation.ScheduleManager
 import com.example.app.automation.SystemBridgeManager
 import com.example.app.automation.VoiceManager
@@ -49,6 +50,10 @@ class MainActivity : FlutterActivity() {
 
         // ───── المرحلة 5b: جسر الإعدادات (حفظ مفتاح Gemini محلياً) ─────
         AppSettingsBridge.register(this, messenger)
+
+        // ───── النافذة العائمة + المساعد الافتراضي ─────
+        MethodChannel(messenger, "com.example.app/overlay")
+            .setMethodCallHandler { call, result -> handleOverlayCall(call, result) }
     }
 
     /** معالجة استدعاءات القناة الصوتية "com.example.app/voice". */
@@ -123,6 +128,84 @@ class MainActivity : FlutterActivity() {
             pendingAudioPermissionResult?.success(granted)
             pendingAudioPermissionResult = null
         }
+    }
+
+    /** معالجة استدعاءات قناة النافذة العائمة والمساعد الافتراضي. */
+    private fun handleOverlayCall(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+
+            "hasOverlayPermission" ->
+                result.success(FloatingOverlayManager.canDrawOverlays(this))
+
+            "requestOverlayPermission" -> {
+                if (FloatingOverlayManager.canDrawOverlays(this)) {
+                    result.success(true)
+                    return
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    try {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("OPEN_SETTINGS_FAILED", e.message, null)
+                    }
+                } else {
+                    result.success(true)
+                }
+            }
+
+            "showOverlay" -> {
+                if (!FloatingOverlayManager.canDrawOverlays(this)) {
+                    result.error(
+                        "OVERLAY_PERMISSION",
+                        "صلاحية العرض فوق التطبيقات غير ممنوحة",
+                        null
+                    )
+                    return
+                }
+                FloatingOverlayManager.show(this)
+                result.success(true)
+            }
+
+            "hideOverlay" -> {
+                FloatingOverlayManager.hide()
+                result.success(true)
+            }
+
+            "isOverlayShowing" -> result.success(FloatingOverlayManager.isShowing())
+
+            "isDefaultAssistant" -> result.success(isDefaultAssistant())
+
+            "openAssistantSettings" -> {
+                try {
+                    startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
+                    result.success(true)
+                } catch (e: Exception) {
+                    try {
+                        startActivity(Intent(Settings.ACTION_SETTINGS))
+                        result.success(true)
+                    } catch (inner: Exception) {
+                        result.error("OPEN_SETTINGS_FAILED", inner.message, null)
+                    }
+                }
+            }
+
+            else -> result.notImplemented()
+        }
+    }
+
+    /** هل حُدِّد هذا التطبيق مساعداً رقمياً افتراضياً في إعدادات النظام؟ */
+    private fun isDefaultAssistant(): Boolean {
+        val flat = Settings.Secure.getString(
+            contentResolver,
+            "voice_interaction_service"
+        ) ?: return false
+        return flat.contains(packageName)
     }
 
     /** معالجة استدعاءات قناة الجدولة "com.example.app/scheduler". */

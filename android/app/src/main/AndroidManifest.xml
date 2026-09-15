@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- ═══════════ الأساسية ═══════════ -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -14,6 +15,9 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <!-- ═══════════ النافذة العائمة (SYSTEM_ALERT_WINDOW) ═══════════ -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:name="${applicationName}"
@@ -57,7 +61,8 @@
         <service
             android:name=".automation.AgentForegroundService"
             android:exported="false"
-            android:foregroundServiceType="specialUse|microphone">
+            android:foregroundServiceType="specialUse|microphone"
+            android:stopWithTask="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Voice assistant automation" />
@@ -69,15 +74,70 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- ═══ Shizuku Provider — ضروري لاستلام الـ Binder على أندرويد 11+ ═══ -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
+            tools:replace="android:authorities" />
+
+        <!-- ═══ المساعد الصوتي الرسمي (VoiceInteractionService) ═══ -->
+        <service
+            android:name=".automation.AgentVoiceInteractionService"
+            android:exported="true"
+            android:label="وكيل الأتمتة"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/voice_interaction_service" />
+        </service>
+
+        <service
+            android:name=".automation.AgentVoiceSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <service
+            android:name=".automation.AgentRecognitionService"
+            android:exported="true"
+            android:label="وكيل الأتمتة"
+            android:permission="android.permission.BIND_RECOGNITION_SERVICE">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+            </intent-filter>
+        </service>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
 
+    <!--
+      Package Visibility (أندرويد 11 / API 30+):
+      بدون الإعلان عن حزمة Shizuku يتعذّر اكتشاف الخدمة وطلب الصلاحية
+      حتى لو كان تطبيق Shizuku يعمل — pingBinder يرجع false بصمت.
+    -->
     <queries>
+        <package android:name="moe.shizuku.privileged.api" />
+        <package android:name="moe.shizuku.manager" />
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <intent>
+            <action android:name="android.service.voice.VoiceInteractionService" />
         </intent>
     </queries>
 </manifest>

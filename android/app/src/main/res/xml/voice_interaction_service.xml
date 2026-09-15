@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  تهيئة خدمة المساعد الصوتي الرسمية (VoiceInteractionService).
+  بعد التثبيت: الإعدادات ← التطبيقات الافتراضية ← تطبيق المساعد الرقمي
+  ← اختر «وكيل الأتمتة».
+-->
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="com.example.app.automation.AgentVoiceSessionService"
+    android:recognitionService="com.example.app.automation.AgentRecognitionService"
+    android:settingsActivity="com.example.app.MainActivity"
+    android:supportsAssist="true"
+    android:supportsLaunchVoiceAssistFromKeyguard="true"
+    android:supportsLocalInteraction="true" />

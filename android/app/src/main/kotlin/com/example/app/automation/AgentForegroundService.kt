@@ -78,6 +78,7 @@ class AgentForegroundService : Service() {
         // ترقية العملية إلى "أمامية" بالإشعار الدائم —
         // هذه هي الحماية الأساسية من Low Memory Killer.
         startInForeground()
+        FloatingOverlayManager.showIfPossible(this)
 
         // إعادة التشغيل التلقائي إن قتلها النظام
         return START_STICKY
