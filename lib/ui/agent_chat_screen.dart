@@ -122,46 +122,73 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     _scrollToBottom();
 
     try {
-      // ── 1) المحلل المحلي أولاً — فوري ودون إنترنت ──
-      final intent = IntentParserService.parse(text);
+      // قراءة المفتاح المحفوظ برمجياً (SharedPreferences) قبل أي فحص —
+      // لا نعتمد على --dart-define وحده.
+      await GeminiService.loadSavedKey();
+
+      // ── 1) المحلل المحلي أولاً — أوامر تنفيذية فورية دون إنترنت ──
+      final intent = IntentParserService.parseLocal(text);
       if (intent != null) {
         await _dispatchIntent(intent);
         return;
       }
 
-      // ── 2) المحرك السحابي (Gemini) للأوامر المركبة والحوار ──
-      //    يستخدم المفتاح المحفوظ من ⚙️ الإعدادات أو --dart-define.
-      if (GeminiService.isConfigured) {
-        final outcome = await GeminiService.processVoiceCommand(text);
-        if (!outcome.hasError) {
-          if (outcome.reply.isNotEmpty) {
-            setState(() => _entries.add(_ChatEntry.agent(text: outcome.reply)));
-          }
-          for (final actionIntent in outcome.actions) {
-            await _dispatchIntent(actionIntent);
-          }
-          if (outcome.reply.isEmpty && outcome.actions.isEmpty) {
-            setState(() => _entries.add(
-                  _ChatEntry.agent(text: 'لم أفهم هذا الأمر بعد 🤔'),
-                ));
-          }
-          return;
-        }
+      // ── 2) حوار عام / أوامر مركبة عبر Gemini ──
+      if (!GeminiService.isConfigured) {
+        if (!mounted) return;
+        setState(() {
+          _entries.add(
+            _ChatEntry.agent(
+              text: 'هذا نص حواري ويحتاج محرك Gemini.\n'
+                  'اضبط مفتاح Gemini من الإعدادات ⚙️ ثم أعد المحاولة.',
+            ),
+          );
+        });
+        return;
       }
 
-      // ── 3) لا فهم محلي ولا مفتاح سحابي ──
-      setState(() {
-        _entries.add(
-          _ChatEntry.agent(
-            text: 'لم أفهم هذا الأمر بعد 🤔\n'
-                'جرّب صيغة أوضح مثل: "شغل البيانات" أو '
-                '"اتصل بـ 712345678 من الشريحة 2".',
-          ),
-        );
-      });
+      final outcome = await GeminiService.processVoiceCommand(text);
+      if (!mounted) return;
+
+      if (outcome.hasError &&
+          outcome.reply.isEmpty &&
+          outcome.actions.isEmpty) {
+        setState(() {
+          _entries.add(
+            _ChatEntry.agent(
+              text: '⚠️ تعذر الاتصال بـ Gemini.\n'
+                  '${outcome.error ?? "خطأ غير معروف — تحقق من المفتاح أو الاتصال."}',
+            ),
+          );
+        });
+        return;
+      }
+
+      if (outcome.reply.isNotEmpty) {
+        setState(() => _entries.add(_ChatEntry.agent(text: outcome.reply)));
+        await VoiceService.speak(outcome.reply);
+      }
+
+      for (final actionIntent in outcome.actions) {
+        await _dispatchIntent(actionIntent);
+      }
+
+      if (outcome.reply.isEmpty && outcome.actions.isEmpty) {
+        setState(() {
+          _entries.add(
+            _ChatEntry.agent(
+              text: outcome.hasError
+                  ? '⚠️ ${outcome.error}'
+                  : 'لم يصل رد من المحرك السحابي. حاول صياغة أوضح.',
+            ),
+          );
+        });
+      }
     } finally {
-      setState(() => _sending = false);
-      _scrollToBottom();
+      if (mounted) {
+        setState(() => _sending = false);
+        _scrollToBottom();
+      }
     }
   }
 
