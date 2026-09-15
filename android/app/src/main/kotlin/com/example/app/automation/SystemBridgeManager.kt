@@ -79,8 +79,7 @@ object SystemBridgeManager : MethodChannel.MethodCallHandler {
     /** هل منح المستخدم صلاحية Shizuku لهذا التطبيق؟ */
     fun isPermissionGranted(): Boolean = try {
         isShizukuRunning() &&
-            Shizuku.checkSelfPermission(ShizukuProvider.PERMISSION) ==
-            PackageManager.PERMISSION_GRANTED
+            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
     } catch (e: Exception) {
         false
     }
@@ -115,7 +114,12 @@ object SystemBridgeManager : MethodChannel.MethodCallHandler {
 
     /**
      * تنفيذ أمر Shell بصلاحيات Shizuku (uid 2000 "shell" أو root)
-     * عبر [Shizuku.newProcess] مع قراءة النتيجة كاملة (stdout + stderr).
+     * مع قراءة النتيجة كاملة (stdout + stderr).
+     *
+     * الطريقة العلنية الرسمية في Shizuku API 13.1.5:
+     * الحصول على Binder الخدمة عبر [Shizuku.getBinder] ثم استدعاء
+     * [IShizukuService.newProcess] الذي يبدأ العملية عن بعد ويعيد
+     * عمليةً نقرأ مخرجاتها عبر ParcelFileDescriptor.
      *
      * @throws IllegalStateException إذا لم تكن صلاحية Shizuku ممنوحة.
      */
@@ -124,25 +128,32 @@ object SystemBridgeManager : MethodChannel.MethodCallHandler {
             throw IllegalStateException("Shizuku غير مفعّل أو الصلاحية غير ممنوحة للتطبيق")
         }
 
-        val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
+        val binder = Shizuku.getBinder()
+            ?: throw IllegalStateException("خدمة Shizuku غير متصلة (الـ Binder غير متوفر)")
 
-        // خيط حارس: يقتل العملية إن تجاوزت المهلة حتى لا يعلق المتصل
+        val service = IShizukuService.Stub.asInterface(binder)
+        val remote = service.newProcess(arrayOf("sh", "-c", command), null, null)
+
+        // خيط حارس: يدمّر العملية إن تجاوزت المهلة حتى لا يعلق المتصل
         Thread {
             try {
                 Thread.sleep(SHELL_TIMEOUT_SECONDS * 1000)
             } catch (_: InterruptedException) {
             }
             try {
-                process.destroy()
+                remote.destroy()
             } catch (_: Exception) {
             }
         }.apply { isDaemon = true }.start()
 
         return try {
-            val stdout = process.inputStream.bufferedReader().use { it.readText() }
-            val stderr = process.errorStream.bufferedReader().use { it.readText() }
+            // AutoCloseInputStream يغلق الـ ParcelFileDescriptor تلقائياً
+            val stdout = ParcelFileDescriptor.AutoCloseInputStream(remote.inputStream)
+                .use { it.readBytes().toString(Charsets.UTF_8) }
+            val stderr = ParcelFileDescriptor.AutoCloseInputStream(remote.errorStream)
+                .use { it.readBytes().toString(Charsets.UTF_8) }
             val exitCode = try {
-                process.waitFor()
+                remote.waitFor()
             } catch (e: Exception) {
                 -1
             }
@@ -152,7 +163,10 @@ object SystemBridgeManager : MethodChannel.MethodCallHandler {
                 append("\n[exitCode: ").append(exitCode).append(']')
             }.trim()
         } finally {
-            process.destroy()
+            try {
+                remote.destroy()
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -346,6 +360,10 @@ object SystemBridgeManager : MethodChannel.MethodCallHandler {
 
     private fun postMain(block: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) block()
+        else mainHandler.post(block)
+    }
+}
+) == Looper.getMainLooper()) block()
         else mainHandler.post(block)
     }
 }

@@ -11,6 +11,7 @@ import com.example.app.automation.AppSettingsBridge
 import com.example.app.automation.AutomationBridge
 import com.example.app.automation.ScheduleManager
 import com.example.app.automation.SystemBridgeManager
+import com.example.app.automation.VoiceManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
