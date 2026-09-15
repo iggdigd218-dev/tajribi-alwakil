@@ -12,11 +12,7 @@ import '../services/system_bridge_service.dart';
 import '../services/overlay_service.dart';
 import '../services/voice_service.dart';
 
-/// شاشة الدردشة مع وكيل الأتمتة (المرحلة 4).
-///
-///  - قائمة رسائل + حقل إدخال + زر إرسال.
-///  - شريط حالة علوي: Accessibility / Shizuku / الخدمة الخلفية.
-///  - بطاقات تنفيذ تفاعلية (جدولة، تنفيذ، فشل، تأكيد مالي).
+/// شاشة الدردشة مع وكيل الأتمتة.
 class AgentChatScreen extends StatefulWidget {
   const AgentChatScreen({super.key});
 
@@ -24,7 +20,6 @@ class AgentChatScreen extends StatefulWidget {
   State<AgentChatScreen> createState() => _AgentChatScreenState();
 }
 
-/// نموذج رسالة واحدة داخل المحادثة.
 class _ChatEntry {
   _ChatEntry.user(this.text)
       : isUser = true,
@@ -32,14 +27,8 @@ class _ChatEntry {
   _ChatEntry.agent({this.text, this.result}) : isUser = false;
 
   final bool isUser;
-
-  /// نص الرسالة (للرسائل النصية البسيطة).
   final String? text;
-
-  /// نتيجة تنفيذ أمر (للبطاقات التفاعلية).
   final AgentDispatchResult? result;
-
-  /// النية بانتظار تأكيد المستخدم — غير null فقط لبطاقات التأكيد.
   AgentActionIntent? pendingIntent;
 }
 
@@ -68,7 +57,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
             '• "افتح واتساب" / "افتح محفظة جوادي"',
       ),
     );
-    // ───── المرحلة 5: تهيئة الدورة الصوتية + تحميل مفتاح Gemini المحفوظ ─────
     VoiceService.init();
     VoiceService.onVoiceCommandExecuted = _onVoiceCommandExecuted;
     VoiceService.onAssistantReply = _onAssistantReply;
@@ -89,10 +77,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     super.dispose();
   }
 
-  // ═══════════════════════════════════════════
-  //  حالة الخدمات الثلاث
-  // ═══════════════════════════════════════════
-
   Future<void> _refreshStatus() async {
     final accessibility = await AutomationService.isServiceRunning();
     final shizuku = await SystemBridgeService.checkShizukuPermission();
@@ -106,10 +90,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     });
   }
 
-  // ═══════════════════════════════════════════
-  //  دورة إرسال الأوامر
-  // ═══════════════════════════════════════════
-
   Future<void> _handleSend() async {
     final text = _inputController.text.trim();
     if (text.isEmpty || _sending) return;
@@ -122,18 +102,14 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     _scrollToBottom();
 
     try {
-      // قراءة المفتاح المحفوظ برمجياً (SharedPreferences) قبل أي فحص —
-      // لا نعتمد على --dart-define وحده.
       await GeminiService.loadSavedKey();
 
-      // ── 1) المحلل المحلي أولاً — أوامر تنفيذية فورية دون إنترنت ──
       final intent = IntentParserService.parseLocal(text);
       if (intent != null) {
         await _dispatchIntent(intent);
         return;
       }
 
-      // ── 2) حوار عام / أوامر مركبة عبر Gemini ──
       if (!GeminiService.isConfigured) {
         if (!mounted) return;
         setState(() {
@@ -192,7 +168,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     }
   }
 
-  /// توجيه نيّة واحدة عبر المفرّق المركزي وعرض بطاقة نتيجتها.
   Future<void> _dispatchIntent(AgentActionIntent intent) async {
     final result = await AgentDispatcher.execute(intent);
     final entry = _ChatEntry.agent(result: result);
@@ -228,11 +203,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     _scrollToBottom();
   }
 
-  // ═══════════════════════════════════════════
-  //  المرحلة 5: الدورة الصوتية
-  // ═══════════════════════════════════════════
-
-  /// أمر صوتي نُفِّذ — يُعرض في الشات كرسالة مستخدم + بطاقة نتيجة.
   void _onVoiceCommandExecuted(
     String command,
     AgentActionIntent intent,
@@ -242,20 +212,18 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       _entries.add(_ChatEntry.user('🎙️ $command'));
       final entry = _ChatEntry.agent(result: result);
       if (result.status == AgentDispatchStatus.needsConfirmation) {
-        entry.pendingIntent = intent; // بطاقة التأكيد تعمل بالصوت أيضاً
+        entry.pendingIntent = intent;
       }
       _entries.add(entry);
     });
     _scrollToBottom();
   }
 
-  /// رد لغوي من الوكيل (سحابي) — يُعرض في الشات.
   void _onAssistantReply(String reply) {
     setState(() => _entries.add(_ChatEntry.agent(text: '🗣️ $reply')));
     _scrollToBottom();
   }
 
-  /// تشغيل/إيقاف الاستماع الصوتي الدائم.
   Future<void> _toggleListening() async {
     if (VoiceService.isListening.value) {
       await VoiceService.stopListening();
@@ -268,12 +236,33 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     }
   }
 
-  /// ⚙️ حوار الإعدادات الشامل (المرحلة 5b):
-  /// 1) مفتاح Gemini API (حفظ محلي في SharedPreferences).
-  /// 2) اسم الوكيل (كلمة النداء).
-  /// 3) مفتاح تبديل الاستماع الدائم.
+  InputDecoration _fieldDecoration({required String hint, Widget? suffix}) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: Color(0xFF5A7A96)),
+      isDense: true,
+      filled: true,
+      fillColor: const Color(0xFF0E1621),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xFF3A5068)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xFF0E7C86)),
+      ),
+      suffixIcon: suffix,
+    );
+  }
+
   Future<void> _showSettingsDialog() async {
+    await GeminiService.loadSavedKey();
+    var selectedId = GeminiService.providerId;
     final keyController = TextEditingController(text: GeminiService.apiKey);
+    final modelController = TextEditingController(text: GeminiService.model);
+    final endpointController =
+        TextEditingController(text: GeminiService.endpoint);
     final wakeController =
         TextEditingController(text: VoiceService.wakeWord.value);
     var keyConfigured = GeminiService.isConfigured;
@@ -292,9 +281,80 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── 1) مفتاح Gemini API ──
                 const Text(
-                  'مفتاح Gemini API',
+                  'مزود الذكاء الاصطناعي',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  value: selectedId,
+                  dropdownColor: const Color(0xFF16222F),
+                  isExpanded: true,
+                  decoration: _fieldDecoration(hint: 'اختر المزود'),
+                  items: [
+                    for (final p in GeminiService.providers)
+                      DropdownMenuItem(
+                        value: p.id,
+                        child: Text(
+                          p.label,
+                          style:
+                              const TextStyle(color: Colors.white, fontSize: 13),
+                        ),
+                      ),
+                  ],
+                  onChanged: (id) {
+                    if (id == null) return;
+                    final p = GeminiService.byId(id);
+                    setDialogState(() {
+                      selectedId = id;
+                      if (p.id != 'custom') {
+                        modelController.text = p.defaultModel;
+                        endpointController.text = p.endpoint;
+                      }
+                    });
+                  },
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'الموديل',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: modelController,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: _fieldDecoration(hint: 'اسم الموديل'),
+                ),
+                if (selectedId == 'custom') ...[
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Endpoint',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: endpointController,
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    decoration: _fieldDecoration(
+                      hint: 'https://.../v1/chat/completions',
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                const Text(
+                  'مفتاح API',
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 13,
@@ -306,41 +366,33 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                   controller: keyController,
                   obscureText: true,
                   style: const TextStyle(color: Colors.white, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'AIzaSy...',
-                    hintStyle: const TextStyle(color: Color(0xFF5A7A96)),
-                    isDense: true,
-                    filled: true,
-                    fillColor: const Color(0xFF0E1621),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF3A5068)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF0E7C86)),
-                    ),
-                    suffixIcon: IconButton(
+                  decoration: _fieldDecoration(
+                    hint: 'sk-... أو gsk_...',
+                    suffix: IconButton(
                       icon: const Icon(
                         Icons.save_outlined,
                         color: Color(0xFF0E7C86),
                         size: 18,
                       ),
-                      tooltip: 'حفظ المفتاح',
+                      tooltip: 'حفظ إعدادات الذكاء',
                       onPressed: () async {
-                        final ok = await GeminiService.saveApiKey(
-                          keyController.text,
+                        final info = GeminiService.byId(selectedId);
+                        final ok = await GeminiService.saveSettings(
+                          provider: selectedId,
+                          endpoint: selectedId == 'custom'
+                              ? endpointController.text
+                              : info.endpoint,
+                          model: modelController.text,
+                          apiKey: keyController.text,
                         );
                         setDialogState(
                           () => keyConfigured = GeminiService.isConfigured,
                         );
-                        _showSnack(ok
-                            ? 'تم حفظ مفتاح Gemini بنجاح 🔐'
-                            : 'فشل حفظ المفتاح');
+                        _showSnack(
+                          ok
+                              ? 'تم حفظ ${info.label} بنجاح 🔐'
+                              : 'فشل الحفظ — أدخل المفتاح',
+                        );
                       },
                     ),
                   ),
@@ -348,7 +400,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                 const SizedBox(height: 4),
                 Text(
                   keyConfigured
-                      ? '✓ المفتاح مضبوط — المحرك السحابي جاهز'
+                      ? '✓ ${GeminiService.providerLabel} جاهز — ${GeminiService.model}'
                       : '✗ لا مفتاح — الأوامر المحلية فقط',
                   style: TextStyle(
                     fontSize: 11,
@@ -358,8 +410,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                   ),
                 ),
                 const Divider(color: Color(0xFF22344A), height: 28),
-
-                // ── 2) اسم الوكيل (كلمة النداء) ──
                 const Text(
                   'اسم الوكيل (كلمة النداء)',
                   style: TextStyle(
@@ -372,25 +422,9 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                 TextField(
                   controller: wakeController,
                   style: const TextStyle(color: Colors.white, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'مثال: يا وكيل',
-                    hintStyle: const TextStyle(color: Color(0xFF5A7A96)),
-                    isDense: true,
-                    filled: true,
-                    fillColor: const Color(0xFF0E1621),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF3A5068)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF0E7C86)),
-                    ),
-                    suffixIcon: IconButton(
+                  decoration: _fieldDecoration(
+                    hint: 'مثال: يا وكيل',
+                    suffix: IconButton(
                       icon: const Icon(
                         Icons.save_outlined,
                         color: Color(0xFF0E7C86),
@@ -401,9 +435,11 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                         final name = wakeController.text.trim();
                         if (name.isEmpty) return;
                         final ok = await VoiceService.setWakeWord(name);
-                        _showSnack(ok
-                            ? 'تم حفظ اسم الوكيل: «$name» 🎙️'
-                            : 'فشل حفظ الاسم');
+                        _showSnack(
+                          ok
+                              ? 'تم حفظ اسم الوكيل: «$name» 🎙️'
+                              : 'فشل حفظ الاسم',
+                        );
                       },
                     ),
                   ),
@@ -414,8 +450,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                   style: TextStyle(color: Colors.white38, fontSize: 11),
                 ),
                 const Divider(color: Color(0xFF22344A), height: 28),
-
-                // ── 3) تبديل الاستماع الدائم (مباشر من قيمة الخدمة) ──
                 ValueListenableBuilder<bool>(
                   valueListenable: VoiceService.isListening,
                   builder: (context, listeningValue, _) => SwitchListTile(
@@ -445,8 +479,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                   ),
                 ),
                 const Divider(color: Color(0xFF22344A), height: 28),
-
-                // ── 4) النافذة العائمة ──
                 FutureBuilder<bool>(
                   future: OverlayService.hasOverlayPermission(),
                   builder: (context, snap) {
@@ -522,8 +554,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                   },
                 ),
                 const Divider(color: Color(0xFF22344A), height: 28),
-
-                // ── 5) المساعد الافتراضي (VoiceInteractionService) ──
                 FutureBuilder<bool>(
                   future: OverlayService.isDefaultAssistant(),
                   builder: (context, snap) {
@@ -587,7 +617,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     wakeController.dispose();
   }
 
-  /// شريط "الاستماع نشط" أسفل شريط حالة الخدمات.
   Widget _buildListeningBanner() {
     return ValueListenableBuilder<bool>(
       valueListenable: VoiceService.isListening,
@@ -625,10 +654,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       },
     );
   }
-
-  // ═══════════════════════════════════════════
-  //  تفاعلات شريط الحالة
-  // ═══════════════════════════════════════════
 
   Future<void> _onAccessibilityChipTap() async {
     await AutomationService.openAccessibilitySettings();
@@ -670,10 +695,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       }
     });
   }
-
-  // ═══════════════════════════════════════════
-  //  البناء
-  // ═══════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
@@ -724,7 +745,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
             ),
           ),
           const Spacer(),
-          // 🎙️ المرحلة 5: زر تشغيل/إيقاف الاستماع الدائم
           ValueListenableBuilder<bool>(
             valueListenable: VoiceService.isListening,
             builder: (context, listening, _) => IconButton(
@@ -739,7 +759,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
               ),
             ),
           ),
-          // ⚙️ المرحلة 5b: الإعدادات (مفتاح Gemini + كلمة النداء + الاستماع)
           IconButton(
             onPressed: _showSettingsDialog,
             tooltip: 'الإعدادات',
@@ -749,7 +768,8 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
               size: 22,
             ),
           ),
-          const Icon(Icons.smart_toy_outlined, color: Color(0xFF5A7A96), size: 22),
+          const Icon(Icons.smart_toy_outlined,
+              color: Color(0xFF5A7A96), size: 22),
         ],
       ),
     );
@@ -830,10 +850,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     );
   }
 }
-
-// ═══════════════════════════════════════════════
-//  شريط حالة الخدمات الثلاث
-// ═══════════════════════════════════════════════
 
 class _ServicesStatusStrip extends StatelessWidget {
   const _ServicesStatusStrip({
@@ -962,10 +978,6 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════
-//  فقاعات الرسائل
-// ═══════════════════════════════════════════════
-
 class _UserBubble extends StatelessWidget {
   const _UserBubble({required this.text});
 
@@ -1038,10 +1050,6 @@ class _AgentMessage extends StatelessWidget {
     );
   }
 }
-
-// ═══════════════════════════════════════════════
-//  بطاقات النتائج التفاعلية
-// ═══════════════════════════════════════════════
 
 class _AgentResultCard extends StatelessWidget {
   const _AgentResultCard({
@@ -1159,102 +1167,8 @@ class _AgentResultCard extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════
-//  أدوات تنسيق
-// ═══════════════════════════════════════════════
-
 String _formatDateTime(DateTime time) {
   String two(int v) => v.toString().padLeft(2, '0');
   return '${two(time.hour)}:${two(time.minute)} — '
       '${time.day}/${time.month}/${time.year}';
 }
-
-6),
-        Text(
-          result.message,
-          style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-        ),
-        if (result.status == AgentDispatchStatus.scheduled &&
-            result.intent.scheduledTime != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            '⏰ ${_formatDateTime(result.intent.scheduledTime!)}',
-            style: const TextStyle(color: Color(0xFF5AB8F0), fontSize: 13),
-          ),
-        ],
-        if (showActions) ...[
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: onConfirm,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFE05B4C),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                  icon: const Icon(Icons.check, size: 16),
-                  label: const Text('تأكيد التنفيذ'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onCancel,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white70,
-                    side: const BorderSide(color: Color(0xFF3A5068)),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                  icon: const Icon(Icons.close, size: 16),
-                  label: const Text('إلغاء'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-
-  static String _iconFor(AgentDispatchStatus status) {
-    return switch (status) {
-      AgentDispatchStatus.executed => '✅',
-      AgentDispatchStatus.scheduled => '⏰',
-      AgentDispatchStatus.needsConfirmation => '⚠️',
-      AgentDispatchStatus.failed => '❌',
-      AgentDispatchStatus.unknownCommand => '❓',
-    };
-  }
-
-  static String _titleFor(AgentDispatchStatus status) {
-    return switch (status) {
-      AgentDispatchStatus.executed => 'تم تنفيذ الأمر بنجاح',
-      AgentDispatchStatus.scheduled => 'تمت جدولة المهمة بنجاح',
-      AgentDispatchStatus.needsConfirmation => 'مطلوب تأكيد عملية مالية',
-      AgentDispatchStatus.failed => 'فشل التنفيذ',
-      AgentDispatchStatus.unknownCommand => 'أمر غير معروف',
-    };
-  }
-
-  static Color _colorFor(AgentDispatchStatus status) {
-    return switch (status) {
-      AgentDispatchStatus.executed => const Color(0xFF35C77B),
-      AgentDispatchStatus.scheduled => const Color(0xFF5AB8F0),
-      AgentDispatchStatus.needsConfirmation => const Color(0xFFF0A85A),
-      AgentDispatchStatus.failed => const Color(0xFFE05B4C),
-      AgentDispatchStatus.unknownCommand => const Color(0xFF9AAABD),
-    };
-  }
-}
-
-// ═══════════════════════════════════════════════
-//  أدوات تنسيق
-// ═══════════════════════════════════════════════
-
-String _formatDateTime(DateTime time) {
-  String two(int v) => v.toString().padLeft(2, '0');
-  return '${two(time.hour)}:${two(time.minute)} — '
-      '${time.day}/${time.month}/${time.year}';
-}
-
