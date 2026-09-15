@@ -364,7 +364,4 @@ object SystemBridgeManager : MethodChannel.MethodCallHandler {
         else mainHandler.post(block)
     }
 }
-) == Looper.getMainLooper()) block()
-        else mainHandler.post(block)
-    }
-}
+
