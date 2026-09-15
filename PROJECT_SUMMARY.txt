@@ -62,7 +62,7 @@
 ■ المرحلة 2 — جسر النظام (Shizuku):
   • automation/SystemBridgeManager.kt             أوامر Shell + svc/am/input
   • lib/services/system_bridge_service.dart       الوجه الدارتي
-  • android/app/build.gradle                      تبعيتا rikka.shizuku 13.1.5
+  • android/app/build.gradle                      تبعيتا dev.rikka.shizuku 13.1.5
 
 ■ المرحلة 3 — الجدولة والعمل الخلفي:
   • automation/AgentForegroundService.kt          خدمة أمامية (specialUse|microphone)
