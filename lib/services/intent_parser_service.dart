@@ -117,7 +117,7 @@ class IntentParserService {
   static Future<AgentActionIntent?> parseWithGemini(
     String rawText, {
     String? apiKey,
-    String model = 'gemini-2.0-flash',
+    String model = 'gemini-1.5-flash',
   }) async {
     final key = apiKey ?? const String.fromEnvironment('GEMINI_API_KEY');
     if (key.isEmpty) return null;

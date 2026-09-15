@@ -49,8 +49,8 @@ class GeminiService {
   /// هل المفتاح مضبوط؟
   static bool get isConfigured => apiKey.isNotEmpty;
 
-  /// اسم الموديل (سريع ومناسب للردود الصوتية).
-  static String model = 'gemini-2.0-flash';
+  /// اسم الموديل القياسي (gemini-2.0-flash يسبب 404 على v1beta لبعض المفاتيح).
+  static String model = 'gemini-1.5-flash';
 
   static const Duration _timeout = Duration(seconds: 25);
 
@@ -214,11 +214,11 @@ class GeminiService {
         actions: [],
         error: 'لا اتصال بالإنترنت',
       );
-    } on HttpException {
-      return const GeminiVoiceOutcome(
+    } on HttpException catch (e) {
+      return GeminiVoiceOutcome(
         reply: '',
-        actions: [],
-        error: 'خطأ HTTP أثناء الاتصال بخدمة Gemini',
+        actions: const [],
+        error: 'خطأ HTTP من Gemini: ${e.message}',
       );
     } catch (e) {
       return GeminiVoiceOutcome(reply: '', actions: const [], error: e.toString());
@@ -275,14 +275,16 @@ class GeminiService {
     final client = HttpClient()..connectionTimeout = _timeout;
     try {
       final request = await client.postUrl(uri).timeout(_timeout);
-      request.headers.contentType = ContentType.json;
-      request.write(body);
+      request.headers.contentType =
+          ContentType('application', 'json', charset: 'utf-8');
+      // إرسال البايتات مباشرة حتى لا تتشوّه الحروف العربية داخل الـ prompt
+      request.add(utf8.encode(body));
       final response = await request.close().timeout(_timeout);
       final responseBody = await response.transform(utf8.decoder).join();
 
       if (response.statusCode != 200) {
-        final snippet = responseBody.length > 200
-            ? responseBody.substring(0, 200)
+        final snippet = responseBody.length > 800
+            ? responseBody.substring(0, 800)
             : responseBody;
         throw HttpException('HTTP ${response.statusCode}: $snippet');
       }
