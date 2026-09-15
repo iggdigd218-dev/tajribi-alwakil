@@ -125,7 +125,7 @@ class IntentParserService {
     HttpClient? client;
     try {
       final uri = Uri.parse(
-        'https://generativelanguage.googleapis.com/v1beta/models/'
+        'https://generativelanguage.googleapis.com/v1/models/'
         '$model:generateContent?key=$key',
       );
 

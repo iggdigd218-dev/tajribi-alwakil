@@ -49,7 +49,7 @@ class GeminiService {
   /// هل المفتاح مضبوط؟
   static bool get isConfigured => apiKey.isNotEmpty;
 
-  /// اسم الموديل القياسي (gemini-2.0-flash يسبب 404 على v1beta لبعض المفاتيح).
+  /// اسم الموديل القياسي — يُستدعى عبر REST v1 (وليس v1beta).
   static String model = 'gemini-1.5-flash';
 
   static const Duration _timeout = Duration(seconds: 25);
@@ -237,7 +237,7 @@ class GeminiService {
     List<Map<String, Object?>>? history,
   }) async {
     final uri = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/'
+      'https://generativelanguage.googleapis.com/v1/models/'
       '$model:generateContent?key=$apiKey',
     );
 
