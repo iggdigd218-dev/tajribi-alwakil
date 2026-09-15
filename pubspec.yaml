@@ -1,0 +1,23 @@
+name: agent_automation
+description: >-
+  وكيل الأتمتة الذكي — تحكم صوتي ونصي كامل في الهاتف عبر
+  AccessibilityService و Shizuku و AlarmManager مع محرك تفكير
+  محلي/سحابي (Gemini). صفر تبعيات Dart خارجية.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+# ⚠️ لا تبعيات خارجية إطلاقاً — كل شيء Flutter SDK + Dart القياسية
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

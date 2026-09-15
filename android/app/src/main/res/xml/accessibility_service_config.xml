@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ═══════════════════════════════════════════════════════════════════
+  تهيئة خدمة الأتمتة (AgentAccessibilityService)
+  ───────────────────────────────────────────────────────────────────
+  - تُراقب: تغيّر النوافذ، النقر على العناصر، تغيّر محتوى النوافذ.
+  - تسترجع محتوى النوافذ (findAccessibilityNodeInfosBy*)
+    وتنفّذ الإيماءات (dispatchGesture).
+  - notificationTimeout=100: خنق تدفّق أحداث typeWindowContentChanged
+    حتى لا تُغرق الخدمة بأحداث متكررة.
+  ═══════════════════════════════════════════════════════════════════
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeViewClicked|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds|flagRequestTouchExplorationMode"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
+    android:notificationTimeout="100" />
