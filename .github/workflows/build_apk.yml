@@ -5,9 +5,12 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build Debug APK
+    name: Build APK and Release
     runs-on: ubuntu-latest
 
     steps:
@@ -44,12 +47,51 @@ jobs:
       - name: Build debug APK
         run: flutter build apk --debug
 
+      - name: Build release APK
+        run: flutter build apk --release
+
       - name: Show APK info
         run: ls -lh build/app/outputs/flutter-apk/
 
-      - name: Upload APK artifact
+      - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: agent-automation-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 90
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-automation-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 90
+
+      - name: Prepare GitHub Release asset
+        run: cp build/app/outputs/flutter-apk/app-release.apk agent-automation-v1.1.0.apk
+
+      - name: Publish GitHub Release v1.1.0
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.1.0
+          name: 🤖 وكيل الأتمتة الذكي v1.1.0
+          target_commitish: ${{ github.sha }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          files: agent-automation-v1.1.0.apk
+          body: |
+            تحديث بعد الإصدار الأول — الحوار عبر Gemini + المساعد والنافذة العائمة.
+
+            - 🎙️ استماع دائم + اسم نداء مخصص + رد صوتي رجالي
+            - ⌨️ شات أوامر عربية (نص وصوت) — الحوار العام يذهب إلى Gemini وليس «لم أفهم»
+            - 📡 Shizuku: Package Visibility على أندرويد 11+ + واي فاي/بيانات/مكالمات/أوامر Shell
+            - 🪟 نافذة عائمة فوق التطبيقات (صلاحية العرض فوق التطبيقات من ⚙️)
+            - 🤖 VoiceInteractionService: يمكن تعيينه مساعداً افتراضياً من إعدادات النظام
+            - ⏰ جدولة دقيقة تختبر Doze
+            - 🤖 محرك Gemini للحوار والأوامر المركبة (المفتاح من داخل التطبيق ⚙️)
+            - ⚠️ العمليات المالية تتطلب تأكيداً صريحاً
+
+            **التثبيت:** اسمح بالتثبيت من مصادر غير معروفة، ثم فعّل «محرك الأتمتة» من إعدادات إمكانية الوصول، وشغّل Shizuku، واحفظ مفتاح Gemini من ⚙️.
+
+            موقّع بمفتاح debug للاختبار.
