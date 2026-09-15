@@ -25,7 +25,9 @@ class AgentChatScreen extends StatefulWidget {
 
 /// نموذج رسالة واحدة داخل المحادثة.
 class _ChatEntry {
-  _ChatEntry.user(this.text) : isUser = true;
+  _ChatEntry.user(this.text)
+      : isUser = true,
+        result = null;
   _ChatEntry.agent({this.text, this.result}) : isUser = false;
 
   final bool isUser;
