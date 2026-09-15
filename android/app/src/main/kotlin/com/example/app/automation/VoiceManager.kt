@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -16,6 +18,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 import java.util.Locale
 
 /**
@@ -257,6 +260,110 @@ object VoiceManager : RecognitionListener {
             resumeMicAfterSpeech()
         }
     }
+
+    // ══════════════════════════════════════════════════════════
+    //  الصوت العصبي: تشغيل ملفات MP3 المولّدة عبر Edge TTS
+    // ══════════════════════════════════════════════════════════
+    private var mediaPlayer: MediaPlayer? = null
+    private val audioQueue = ArrayDeque<String>()
+    private var audioChainActive = false
+
+    /**
+     * صف ملفاً صوتياً للتشغيل (MP3 عصبي من Edge TTS).
+     * يعيد false إن كان الملف غير صالح — ليتراجع Dart لمحرك النظام.
+     */
+    @JvmStatic
+    fun playAudioFile(path: String): Boolean {
+        val f = File(path)
+        if (!f.exists() || f.length() < 512L) return false
+        audioQueue.addLast(path)
+        if (!audioChainActive) startNextAudio()
+        return true
+    }
+
+    private fun startNextAudio() {
+        // removeFirst() بعد فحص الفراغ: pollFirst() غير موجودة في
+        // kotlin.collections.ArrayDeque بإصدار Kotlin هنا (أضيفت في 2.1)،
+        // والنوع الصريح String يمنع أي لبس في أحمال setDataSource الزائدة.
+        if (audioQueue.isEmpty()) {
+            audioChainActive = false
+            resumeMicAfterSpeech() // نفس سلوك انتهاء TTS — استئناف الميكروفون
+            return
+        }
+        val next: String = audioQueue.removeFirst()
+        audioChainActive = true
+
+        // أسكِت الميكروفون حتى لا يسمع الوكيل نفسه
+        if (continuousMode) {
+            pauseMicForTts = true
+            mainHandler.removeCallbacks(restartRunnable)
+            try {
+                recognizer?.cancel()
+            } catch (_: Exception) {
+            }
+        }
+
+        try {
+            try {
+                tts?.stop() // صوت النظام يتنازل للصوت العصبي
+            } catch (_: Exception) {
+            }
+            releasePlayer()
+            val mp = MediaPlayer()
+            mediaPlayer = mp
+            mp.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            mp.setDataSource(next)
+            mp.setOnCompletionListener {
+                releasePlayer()
+                startNextAudio()
+            }
+            mp.setOnErrorListener { _, _, _ ->
+                releasePlayer()
+                startNextAudio()
+                true
+            }
+            mp.prepare()
+            mp.start()
+            // حذف الملف المؤقت بعد بدء التشغيل الآمن
+            try {
+                File(next).delete()
+            } catch (_: Exception) {
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "فشل تشغيل الصوت العصبي: ${e.message}")
+            releasePlayer()
+            startNextAudio() // تخطَّ المعطوب للتالي
+        }
+    }
+
+    private fun releasePlayer() {
+        try {
+            mediaPlayer?.release()
+        } catch (_: Exception) {
+        }
+        mediaPlayer = null
+    }
+
+    /** إيقاف الصوت العصبي فوراً وتفريغ الطابور (+ إسكات TTS). */
+    @JvmStatic
+    fun stopAudioPlayback() {
+        audioQueue.clear()
+        audioChainActive = false
+        releasePlayer()
+        try {
+            tts?.stop()
+        } catch (_: Exception) {
+        }
+        resumeMicAfterSpeech()
+    }
+
+    @JvmStatic
+    fun isAudioPlaying(): Boolean = audioChainActive
 
     private fun initTts() {
         val context = appContext ?: return

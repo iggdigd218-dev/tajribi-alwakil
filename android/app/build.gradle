@@ -18,12 +18,29 @@ android {
         jvmTarget = '17'
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    //  التوقيع: لا كلمات مرور داخل الكود.
+    //  ترتيب القراءة:
+    //    1) android/key.properties  (محلي — مستثنى من git)
+    //    2) متغيرات البيئة           (CI — GitHub Secrets)
+    //    3) مفتاح debug الافتراضي    (احتياط حتى لا يفشل البناء)
+    // ═══════════════════════════════════════════════════════════════════
     signingConfigs {
         agent {
-            storeFile file("keystore/agent-release.jks")
-            storePassword "AgentAuto2026"
-            keyAlias "agent"
-            keyPassword "AgentAuto2026"
+            def keystoreProperties = new Properties()
+            def keystorePropertiesFile = rootProject.file("key.properties")
+            if (keystorePropertiesFile.exists()) {
+                keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+            }
+
+            def prop = { String name ->
+                keystoreProperties.getProperty(name) ?: System.getenv(name)
+            }
+
+            storeFile     file(prop("storeFile")     ?: "keystore/agent-release.jks")
+            storePassword prop("storePassword")      ?: ""
+            keyAlias      prop("keyAlias")           ?: "agent"
+            keyPassword   prop("keyPassword")        ?: ""
         }
     }
 
@@ -38,10 +55,10 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.agent
+            signingConfig = signingConfigs.agent.storePassword ? signingConfigs.agent : signingConfigs.debug
         }
         release {
-            signingConfig = signingConfigs.agent
+            signingConfig = signingConfigs.agent.storePassword ? signingConfigs.agent : signingConfigs.debug
         }
     }
 }

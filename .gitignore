@@ -29,3 +29,8 @@ ios/.symlink_cache/
 *.log
 .DS_Store
 Thumbs.db
+
+# نواتج البناء المحلية (APK) — تُبنى محلياً ولا تُرفع
+dist/
+releases/
+*.apk

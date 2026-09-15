@@ -19,6 +19,20 @@
     <!-- ═══════════ النافذة العائمة (SYSTEM_ALERT_WINDOW) ═══════════ -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!--
+      ═══════════ معرفة الجهاز: رؤية كل التطبيقات المثبتة ═══════════
+      بدون هذه الصلاحية على أندرويد 11+ (API 30) تعيد
+      PackageManager.getInstalledApplications() قائمة مُصفَّاة لا تحوي
+      سوى الحزم المعلنة في <queries> — فلا يستطيع الوكيل أن يعرف
+      تطبيقات الجهاز ولا أن يفتحها بالاسم.
+
+      ⚠️ ملاحظة نشر: Google Play تطلب تبريراً لاستخدام QUERY_ALL_PACKAGES.
+         التطبيق هنا مساعد أتمتة شخصي يوزَّع APK مباشراً، فهو مبرَّر وظيفياً.
+    -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
     <application
         android:name="${applicationName}"
         android:label="وكيل الأتمتة"
@@ -130,6 +144,19 @@
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
         <package android:name="moe.shizuku.manager" />
+        <!-- كل التطبيقات القابلة للإطلاق — احتياط إن لم تُمنح QUERY_ALL_PACKAGES -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- فتح روابط/مشاركة — يسمح باكتشاف المتصفحات وتطبيقات المشاركة -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />

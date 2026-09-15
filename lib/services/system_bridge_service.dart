@@ -147,6 +147,109 @@ class SystemBridgeService {
         '';
   }
 
+  // ─────────────────────────────────────────────
+  //  المرحلة 6: أوامر تعمل دون Shizuku
+  // ─────────────────────────────────────────────
+
+  /// الكشاف عبر CameraManager — لا يحتاج أي صلاحية خاصة.
+  static Future<String> setFlashlight(bool enable) =>
+      _invoke('setFlashlight', {'enable': enable});
+
+  /// ضبط صوت الوسائط — [percent] بين 0 و100، أو [mute] للكتم.
+  static Future<String> setVolume({int? percent, bool mute = false}) =>
+      _invoke('setVolume', {
+        if (percent != null) 'percent': percent,
+        'mute': mute,
+      });
+
+  /// فتح نيّة نظام قياسية (صفحة إعدادات / كاميرا / متصفح / …).
+  static Future<String> openSystemIntent(String key, {String? extra}) =>
+      _invoke('openSystemIntent', {
+        'key': key,
+        if (extra != null) 'extra': extra,
+      });
+
+  /// فتح مسودة رسالة نصية مع الرقم والنص جاهزين.
+  ///
+  /// الإرسال الفعلي يحتاج صلاحية SEND_SMS غير المضمّنة عمداً —
+  /// نملأ المسودة ويضغط المستخدم «إرسال» بيده.
+  static Future<String> openSmsCompose(String phoneNumber, String body) =>
+      _invoke('openSmsCompose', {'phoneNumber': phoneNumber, 'body': body});
+
+  /// فتح محادثة واتساب مباشرة مع رقم (عبر wa.me).
+  static Future<String> openWhatsAppChat(String phoneNumber, String body) =>
+      _invoke('openWhatsAppChat', {'phoneNumber': phoneNumber, 'body': body});
+
+  // ─────────────────────────────────────────────
+  //  المرحلة 6: أوامر تحتاج Shizuku ولها مسار بديل
+  // ─────────────────────────────────────────────
+
+  static Future<String> toggleBluetooth(bool enable) =>
+      _invoke('toggleBluetooth', {'enable': enable});
+
+  static Future<String> toggleAirplane(bool enable) =>
+      _invoke('toggleAirplane', {'enable': enable});
+
+  /// [percent] بين 0 و100، أو [auto] للسطوع التلقائي.
+  static Future<String> setBrightness({int? percent, bool? auto}) =>
+      _invoke('setBrightness', {
+        if (percent != null) 'percent': percent,
+        if (auto != null) 'auto': auto,
+      });
+
+  /// [orientation] هي landscape أو portrait، و[auto] للدوران التلقائي.
+  static Future<String> toggleRotation({String? orientation, bool? auto}) =>
+      _invoke('toggleRotation', {
+        if (orientation != null) 'orientation': orientation,
+        if (auto != null) 'auto': auto,
+      });
+
+  static Future<String> setDnd(bool enable) =>
+      _invoke('setDnd', {'enable': enable});
+
+  /// [target] هي back أو home أو recents.
+  static Future<String> navigateUi(String target) =>
+      _invoke('navigateUi', {'target': target});
+
+  static Future<String> screenshot() =>
+      _invoke('screenshot', const <String, dynamic>{});
+
+  static Future<String> lockScreen() =>
+      _invoke('lockScreen', const <String, dynamic>{});
+
+  static Future<String> rebootDevice() =>
+      _invoke('rebootDevice', const <String, dynamic>{});
+
+  /// [op] هي play أو pause أو next أو prev أو stop.
+  static Future<String> mediaControl(String op) =>
+      _invoke('mediaControl', {'op': op});
+
+  static Future<String> forceStopApp(String packageName) =>
+      _invoke('forceStopApp', {'packageName': packageName});
+
+  static Future<String> clearAppCache(String packageName) =>
+      _invoke('clearAppCache', {'packageName': packageName});
+
+  // ─────────────────────────────────────────────
+
+  /// لفّ موحد: يستدعي القناة ويتحمّل غيابها (منصة أخرى / جسر قديم)
+  /// بدل رمي استثناء يكسر تدفق المحادثة.
+  static Future<String> _invoke(
+    String method,
+    Map<String, dynamic> args,
+  ) async {
+    if (!_isAndroid) {
+      throw UnsupportedError('SystemBridgeService متاح على أندرويد فقط');
+    }
+    try {
+      return await _channel.invokeMethod<String>(method, args) ?? '';
+    } on MissingPluginException {
+      return 'الجسر الأصلي لا يدعم «$method» — يلزم بناء نسخة أحدث من التطبيق';
+    } on PlatformException catch (e) {
+      return 'خطأ [${e.code}]: ${e.message ?? 'غير معروف'}';
+    }
+  }
+
   static void _ensureAndroid() {
     if (!_isAndroid) {
       throw UnsupportedError('SystemBridgeService متاح على أندرويد فقط');

@@ -9,6 +9,7 @@ import android.provider.Settings
 import com.example.app.automation.AgentForegroundService
 import com.example.app.automation.AppSettingsBridge
 import com.example.app.automation.AutomationBridge
+import com.example.app.automation.DeviceKnowledgeBridge
 import com.example.app.automation.FloatingOverlayManager
 import com.example.app.automation.ScheduleManager
 import com.example.app.automation.SystemBridgeManager
@@ -50,6 +51,9 @@ class MainActivity : FlutterActivity() {
 
         // ───── المرحلة 5b: جسر الإعدادات (حفظ مفتاح Gemini محلياً) ─────
         AppSettingsBridge.register(this, messenger)
+
+        // ───── المرحلة 6: جسر معرفة الجهاز (التطبيقات المثبتة + ملفاتها + حالة الجهاز) ─────
+        DeviceKnowledgeBridge.register(this, messenger)
 
         // ───── النافذة العائمة + المساعد الافتراضي ─────
         MethodChannel(messenger, "com.example.app/overlay")
@@ -100,6 +104,18 @@ class MainActivity : FlutterActivity() {
                 VoiceManager.speak(call.arguments as? String ?: "")
                 result.success(true)
             }
+
+            // الصوت العصبي (Edge TTS): تشغيل/إيقاف/حالة
+            "playAudioFile" -> result.success(
+                VoiceManager.playAudioFile(call.arguments as? String ?: "")
+            )
+
+            "stopAudioPlayback" -> {
+                VoiceManager.stopAudioPlayback()
+                result.success(true)
+            }
+
+            "isAudioPlaying" -> result.success(VoiceManager.isAudioPlaying())
 
             "isListening" -> result.success(VoiceManager.isListening())
 

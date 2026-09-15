@@ -7,6 +7,7 @@ import '../services/agent_dispatcher.dart';
 import '../services/automation_service.dart';
 import '../services/gemini_service.dart';
 import '../services/intent_parser_service.dart';
+import '../services/offline_assistant.dart';
 import '../services/scheduler_service.dart';
 import '../services/system_bridge_service.dart';
 import '../services/overlay_service.dart';
@@ -104,39 +105,56 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     try {
       await GeminiService.loadSavedKey();
 
-      final intent = IntentParserService.parseLocal(text);
+      // ── المسار 1: المحلل المحلي + حلّ معرّف الحزمة من الجهاز ──
+      // فوري ومجاني ويعمل دون إنترنت. إن فهم الأمر نفّذه مباشرة.
+      final intent = await IntentParserService.parseLocalAsync(text);
       if (intent != null) {
         await _dispatchIntent(intent);
         return;
       }
 
+      // ── المسار 2: الدماغ المحلي (معرفة الجهاز + الحوار العام) ──
+      // يُجرَّب قبل السحابة لأن كثيراً من الأسئلة («كم البطارية؟»
+      // «ما هي التطبيقات المثبتة؟» «من أنت؟») إجاباتها محلية أصلاً،
+      // فلا مبرر لاستدعاء مدفوع ولا لتأخير الشبكة.
+      final offline = await OfflineAssistant.respond(text);
+      if (!mounted) return;
+      if (offline.match != OfflineMatch.none) {
+        setState(() => _entries.add(_ChatEntry.agent(text: offline.displayText)));
+        if (offline.reply.isNotEmpty) await VoiceService.speak(offline.reply);
+        for (final a in offline.actions) {
+          await _dispatchIntent(a);
+        }
+        return;
+      }
+
+      // ── المسار 3: المحرك السحابي للحوار الحر والأوامر الغامضة ──
       if (!GeminiService.isConfigured) {
-        if (!mounted) return;
-        setState(() {
-          _entries.add(
-            _ChatEntry.agent(
-              text: 'هذا نص حواري ويحتاج محرك الذكاء الاصطناعي.\n'
-                  'اضبط المزود والمفتاح من الإعدادات ⚙️ ثم أعد المحاولة.',
-            ),
-          );
-        });
+        // لا يوجد موصل — الدماغ المحلي هو الرد النهائي (لا طريق مسدود)
+        setState(() => _entries.add(_ChatEntry.agent(text: offline.displayText)));
+        if (offline.reply.isNotEmpty) await VoiceService.speak(offline.reply);
         return;
       }
 
       final outcome = await GeminiService.processVoiceCommand(text);
       if (!mounted) return;
 
+      // ── فشل الموصل: نحوّله إلى رد مفيد بدل الطريق المسدود ──
       if (outcome.hasError &&
           outcome.reply.isEmpty &&
           outcome.actions.isEmpty) {
+        final recovered = await OfflineAssistant.recoverFromConnectorFailure(
+          text,
+          outcome.error,
+          statusCode: outcome.statusCode,
+        );
+        if (!mounted) return;
         setState(() {
-          _entries.add(
-            _ChatEntry.agent(
-              text: '⚠️ تعذر الاتصال بالمحرك السحابي.\n'
-                  '${outcome.error ?? "خطأ غير معروف — تحقق من المفتاح أو الاتصال."}',
-            ),
-          );
+          _entries.add(_ChatEntry.agent(text: recovered.displayText));
         });
+        for (final a in recovered.actions) {
+          await _dispatchIntent(a);
+        }
         return;
       }
 
@@ -266,6 +284,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     final wakeController =
         TextEditingController(text: VoiceService.wakeWord.value);
     var keyConfigured = GeminiService.isConfigured;
+    var testing = false;
 
     await showDialog<void>(
       context: context,
@@ -400,14 +419,95 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                 const SizedBox(height: 4),
                 Text(
                   keyConfigured
-                      ? '✓ ${GeminiService.providerLabel} جاهز — ${GeminiService.model}'
-                      : '✗ لا مفتاح — الأوامر المحلية فقط',
+                      ? GeminiService.isUsingBuiltInKey
+                          ? '✓ ${GeminiService.providerLabel} جاهز (مفتاح مدمج) — ${GeminiService.model}'
+                          : '✓ ${GeminiService.providerLabel} جاهز — ${GeminiService.model}'
+                      : '✗ لا مفتاح — الأوامر المحلية تعمل على أي حال',
                   style: TextStyle(
                     fontSize: 11,
                     color: keyConfigured
                         ? const Color(0xFF35C77B)
                         : const Color(0xFFE05B4C),
                   ),
+                ),
+                const SizedBox(height: 12),
+
+                // ═══ اختبار الموصل ═══
+                // اختباران متدرّجان يفصلان «الشبكة معطلة» من «المفتاح خاطئ»
+                // — وهما عطلان يختلطان على المستخدم كثيراً.
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF7FD1DA),
+                          side: const BorderSide(color: Color(0xFF22344A)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: testing
+                            ? null
+                            : () async {
+                                setDialogState(() => testing = true);
+                                final r = await GeminiService.testReachability(
+                                  overrideProviderId: selectedId,
+                                  overrideEndpoint: endpointController.text,
+                                  overrideModel: modelController.text,
+                                );
+                                if (!mounted) return;
+                                setDialogState(() => testing = false);
+                                _showConnectorReport(r, reachability: true);
+                              },
+                        icon: const Icon(Icons.wifi_tethering, size: 18),
+                        label: const Text(
+                          'اختبار الوصول',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF0E7C86),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: testing || keyController.text.trim().isEmpty
+                            ? null
+                            : () async {
+                                setDialogState(() => testing = true);
+                                final r = await GeminiService.testConnection(
+                                  overrideProviderId: selectedId,
+                                  overrideEndpoint: endpointController.text,
+                                  overrideModel: modelController.text,
+                                  overrideKey: keyController.text,
+                                );
+                                if (!mounted) return;
+                                setDialogState(() => testing = false);
+                                _showConnectorReport(r);
+                              },
+                        icon: testing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.bolt, size: 18),
+                        label: Text(
+                          testing ? 'جارٍ الاختبار…' : 'اختبار بالمفتاح',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '«الوصول» يتحقق من الشبكة والـ endpoint دون الحاجة لمفتاح صالح.\n'
+                  '«بالمفتاح» يرسل طلباً حقيقياً ويعرض ردّ النموذج.',
+                  style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.5),
                 ),
                 const Divider(color: Color(0xFF22344A), height: 28),
                 const Text(
@@ -683,6 +783,165 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
   }
+
+  /// عرض تقرير اختبار الموصل في حوار مقروء — مع تشخيص قابل للتنفيذ.
+  ///
+  /// [reachability] تميّز اختبار الوصول (بلا مفتاح صالح) عن الاختبار الكامل.
+  void _showConnectorReport(ConnectorTestResult r, {bool reachability = false}) {
+    // تشخيص نوع العطل واقتراح الحل — بدل ترك المستخدم أمام رمز HTTP
+    final failure = OfflineAssistant.classifyError(
+      r.errorText,
+      statusCode: r.statusCode,
+    );
+    final advice = r.ok ? null : OfflineAssistant.adviceFor(failure);
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131F2E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFF22344A)),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              r.ok ? Icons.check_circle : Icons.error,
+              color: r.ok ? const Color(0xFF35C77B) : const Color(0xFFE05B4C),
+              size: 22,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                r.ok
+                    ? (reachability ? 'الشبكة سليمة' : 'الموصل يعمل')
+                    : (reachability ? 'تعذّر الوصول' : 'الموصل فشل'),
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _reportLine('المزود', r.providerLabel),
+                _reportLine('الموديل', r.model),
+                _reportLine(
+                  'رمز الاستجابة',
+                  r.statusCode == 0 ? 'لا استجابة (لم يصل الطلب)' : 'HTTP ${r.statusCode}',
+                ),
+                _reportLine('زمن الاستجابة', '${r.latencyMs} مللي ثانية'),
+                const SizedBox(height: 8),
+                SelectableText(
+                  r.endpoint,
+                  style: const TextStyle(
+                    color: Colors.white38,
+                    fontSize: 10.5,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                if (r.sampleReply != null && r.sampleReply!.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    'ردّ النموذج:',
+                    style: TextStyle(color: Color(0xFF7FD1DA), fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    r.sampleReply!,
+                    style: const TextStyle(color: Colors.white, fontSize: 12.5),
+                  ),
+                ],
+                if (r.errorText != null && r.errorText!.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    'رسالة المزود:',
+                    style: TextStyle(color: Color(0xFFE05B4C), fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    r.errorText!,
+                    style: const TextStyle(color: Colors.white70, fontSize: 11.5),
+                  ),
+                ],
+                if (advice != null) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1B2B3F),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.lightbulb_outline,
+                          color: Color(0xFFE8C468),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            advice,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11.5,
+                              height: 1.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (!r.ok) ...[
+                  const SizedBox(height: 10),
+                  const Text(
+                    'ملاحظة: كل أوامر الجهاز (شبكة، تطبيقات، اتصال، جدولة) '
+                    'تعمل دون هذا الموصل — هو للحوار الحر والأوامر الغامضة فقط.',
+                    style: TextStyle(color: Colors.white38, fontSize: 10.5, height: 1.5),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reportLine(String label, String value) => Padding(
+        padding: const EdgeInsets.only(bottom: 5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 96,
+              child: Text(
+                label,
+                style: const TextStyle(color: Colors.white38, fontSize: 11.5),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                value,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1141,6 +1400,7 @@ class _AgentResultCard extends StatelessWidget {
       AgentDispatchStatus.executed => '✅',
       AgentDispatchStatus.scheduled => '⏰',
       AgentDispatchStatus.needsConfirmation => '⚠️',
+      AgentDispatchStatus.degraded => '🔧',
       AgentDispatchStatus.failed => '❌',
       AgentDispatchStatus.unknownCommand => '❓',
     };
@@ -1150,7 +1410,8 @@ class _AgentResultCard extends StatelessWidget {
     return switch (status) {
       AgentDispatchStatus.executed => 'تم تنفيذ الأمر بنجاح',
       AgentDispatchStatus.scheduled => 'تمت جدولة المهمة بنجاح',
-      AgentDispatchStatus.needsConfirmation => 'مطلوب تأكيد عملية مالية',
+      AgentDispatchStatus.needsConfirmation => 'مطلوب تأكيد عملية حساسة',
+      AgentDispatchStatus.degraded => 'نُفّذ بطريقة بديلة',
       AgentDispatchStatus.failed => 'فشل التنفيذ',
       AgentDispatchStatus.unknownCommand => 'أمر غير معروف',
     };
@@ -1161,6 +1422,7 @@ class _AgentResultCard extends StatelessWidget {
       AgentDispatchStatus.executed => const Color(0xFF35C77B),
       AgentDispatchStatus.scheduled => const Color(0xFF5AB8F0),
       AgentDispatchStatus.needsConfirmation => const Color(0xFFF0A85A),
+      AgentDispatchStatus.degraded => const Color(0xFFE8C468),
       AgentDispatchStatus.failed => const Color(0xFFE05B4C),
       AgentDispatchStatus.unknownCommand => const Color(0xFF9AAABD),
     };

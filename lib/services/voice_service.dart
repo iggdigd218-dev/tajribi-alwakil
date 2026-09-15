@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import '../models/agent_action_intent.dart';
 import 'agent_dispatcher.dart';
 import 'gemini_service.dart';
+import 'edge_tts_service.dart';
 import 'intent_parser_service.dart';
+import 'offline_assistant.dart';
 
 /// الدورة الصوتية الكاملة (المرحلة 5) — الوجه الدارتي لمحرك الصوت.
 ///
@@ -135,13 +137,46 @@ class VoiceService {
     }
   }
 
+  /// تفعيل/تعطيل الصوت العصبي (Edge TTS). الافتراضي: مفعّل.
+  static bool neuralVoiceEnabled = true;
+
   /// نطق نص بصوت الوكيل الرجالي.
+  ///
+  /// الأولوية للمحرك العصبي من مايكروسوفت (Edge TTS — مجاني بلا مفاتيح):
+  /// يولّد MP3 عصبياً طبيعياً (ar-SA-HamedNeural) ويشغّله المشغّل الأصلي.
+  /// عند غياب الإنترنت أو أي فشل شبكي: تراجع **تلقائي وفوري** إلى
+  /// محرك النظام المحلي (Android TTS) فلا ينقطع الكلام أبداً.
   static Future<void> speak(String text) async {
     if (text.trim().isEmpty) return;
+
+    // 1) الصوت العصبي
+    if (neuralVoiceEnabled) {
+      try {
+        final path = await EdgeTtsService.synthesize(text);
+        if (path != null) {
+          final ok = await _channel.invokeMethod<bool>('playAudioFile', path) ??
+              false;
+          if (ok) return;
+        }
+      } on PlatformException {
+        // القناة غير جاهزة — ارتد لمحرك النظام
+      }
+    }
+
+    // 2) الارتداد: محرك النظام المحلي
     try {
       await _channel.invokeMethod<void>('speakText', text);
     } on PlatformException {
       // تجاهل صامت — النطق غير متاح
+    }
+  }
+
+  /// إيقاف الكلام الجاري فوراً (العصبي والنظامي معاً).
+  static Future<void> stopSpeaking() async {
+    try {
+      await _channel.invokeMethod<void>('stopAudioPlayback');
+    } on PlatformException {
+      // تجاهل صامت
     }
   }
 
@@ -155,7 +190,9 @@ class VoiceService {
     _processing = true;
     try {
       // ── 1) المسار السريع: محلل محلي فوري دون إنترنت ──
-      final intent = IntentParserService.parse(command);
+      // parseLocalAsync يحلّ أيضاً معرّف حزمة التطبيق من جهاز المستخدم،
+      // فلا يفشل «افتح X» لأن الاسم لم يكن في خريطة مكتوبة يدوياً.
+      final intent = await IntentParserService.parseLocalAsync(command);
       if (intent != null) {
         final result = await AgentDispatcher.execute(intent);
         await _speakResult(result);
@@ -163,20 +200,51 @@ class VoiceService {
         return;
       }
 
-      // ── 2) المسار الذكي: حوار أو أمر مركب عبر Gemini ──
+      // ── 2) الدماغ المحلي: معرفة الجهاز + الحوار العام ──
+      // يُجرَّب قبل السحابة لأن إجاباته فورية ومجانية وموثوقة
+      // (البطارية، التطبيقات المثبتة، التحية، الوقت، الحساب).
+      final offline = await OfflineAssistant.respond(command);
+      if (offline.match != OfflineMatch.none) {
+        await speak(offline.reply);
+        onAssistantReply?.call(offline.displayText);
+        for (final a in offline.actions) {
+          final r = await AgentDispatcher.execute(a);
+          onVoiceCommandExecuted?.call(command, a, r);
+        }
+        return;
+      }
+
+      // ── 3) المسار الذكي: حوار حر أو أمر مركب عبر الموصل ──
       if (!GeminiService.isConfigured) {
-        const message =
-            'هذا أمر مركب يحتاج محرك التفكير السحابي، والمفتاح غير مضبوط بعد.';
+        // لا يوجد موصل — الدماغ المحلي هو الرد النهائي، بصوت طبيعي
+        final message = offline.reply.isEmpty
+            ? 'لم أفهم هذا الأمر. اسألني «ماذا تستطيع؟» لأشرح لك.'
+            : offline.reply;
         await speak(message);
-        onAssistantReply?.call(message);
+        onAssistantReply?.call(offline.displayText);
         return;
       }
 
       final outcome = await GeminiService.processVoiceCommand(command);
 
       if (outcome.hasError) {
-        await speak('تعذر الاتصال بمحرك التفكير السحابي.');
-        onAssistantReply?.call('⚠️ ${outcome.error}');
+        // فشل الموصل لا يُنهي المحادثة — نتحول للدماغ المحلي
+        final recovered = await OfflineAssistant.recoverFromConnectorFailure(
+          command,
+          outcome.error,
+          statusCode: outcome.statusCode,
+        );
+        // صوتياً نختصر: ننطق الرد المحلي ونذكر العطل بجملة واحدة
+        final spoken = recovered.match != OfflineMatch.none
+            ? recovered.reply
+            : '${OfflineAssistant.classifyError(outcome.error, statusCode: outcome.statusCode).arabic}. '
+                'الأوامر التنفيذية تعمل دون إنترنت.';
+        await speak(spoken);
+        onAssistantReply?.call(recovered.displayText);
+        for (final a in recovered.actions) {
+          final r = await AgentDispatcher.execute(a);
+          onVoiceCommandExecuted?.call(command, a, r);
+        }
         return;
       }
 
@@ -212,6 +280,8 @@ class VoiceService {
       AgentDispatchStatus.needsConfirmation =>
         'هذه عملية مالية وتتطلب تأكيدك على الشاشة.',
       AgentDispatchStatus.failed => 'تعذر تنفيذ الأمر.',
+      AgentDispatchStatus.degraded =>
+        'نفذت ما أقدر عليه، وأكملت الباقي على الشاشة.',
       AgentDispatchStatus.unknownCommand => 'أمر غير معروف.',
     };
     await speak(phrase);

@@ -3,10 +3,14 @@
   تهيئة خدمة المساعد الصوتي الرسمية (VoiceInteractionService).
   recognitionService إلزامي ليظهر التطبيق في قائمة المساعد الرقمي.
 -->
-<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  ملاحظة: السمة android:supportsContext غير موجودة في إطار أندرويد
+  (AAPT يرفضها: attribute not found) — دعم السياق يتحقق فعلياً عبر
+  supportsAssist="true" أدناه، لذا اعتمدنا السمات النظامية الصالحة فقط.
+-->
+<voice-interaction-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:sessionService="com.example.app.automation.AgentVoiceSessionService"
     android:recognitionService="com.example.app.automation.AgentRecognitionService"
-    android:settingsActivity="com.example.app.MainActivity"
     android:supportsAssist="true"
-    android:supportsLaunchVoiceAssistFromKeyguard="true"
-    android:supportsLocalInteraction="true" />
+    android:supportsLaunchVoiceAssistFromKeyguard="true" />

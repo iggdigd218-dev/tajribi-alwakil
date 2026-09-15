@@ -1,0 +1,9 @@
+# انسخ هذا الملف إلى android/key.properties واملأ القيم الحقيقية.
+# الملف الحقيقي مستثنى من git — لا ترفعه أبداً.
+#
+# يمكن بدلاً منه استخدام متغيرات بيئة بنفس الأسماء (مناسبة لـ CI):
+#   storeFile / storePassword / keyAlias / keyPassword
+storeFile=keystore/agent-release.jks
+storePassword=CHANGE_ME
+keyAlias=agent
+keyPassword=CHANGE_ME
