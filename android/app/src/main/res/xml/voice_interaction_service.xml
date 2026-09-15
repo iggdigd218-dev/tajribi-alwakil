@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   تهيئة خدمة المساعد الصوتي الرسمية (VoiceInteractionService).
-  بعد التثبيت: الإعدادات ← التطبيقات الافتراضية ← تطبيق المساعد الرقمي
-  ← اختر «وكيل الأتمتة».
+  recognitionService إلزامي ليظهر التطبيق في قائمة المساعد الرقمي.
 -->
 <voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:sessionService="com.example.app.automation.AgentVoiceSessionService"

@@ -139,8 +139,8 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
         setState(() {
           _entries.add(
             _ChatEntry.agent(
-              text: 'هذا نص حواري ويحتاج محرك Gemini.\n'
-                  'اضبط مفتاح Gemini من الإعدادات ⚙️ ثم أعد المحاولة.',
+              text: 'هذا نص حواري ويحتاج محرك الذكاء الاصطناعي.\n'
+                  'اضبط المزود والمفتاح من الإعدادات ⚙️ ثم أعد المحاولة.',
             ),
           );
         });
@@ -156,7 +156,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
         setState(() {
           _entries.add(
             _ChatEntry.agent(
-              text: '⚠️ تعذر الاتصال بـ Gemini.\n'
+              text: '⚠️ تعذر الاتصال بالمحرك السحابي.\n'
                   '${outcome.error ?? "خطأ غير معروف — تحقق من المفتاح أو الاتصال."}',
             ),
           );
@@ -582,6 +582,8 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     );
 
     keyController.dispose();
+    modelController.dispose();
+    endpointController.dispose();
     wakeController.dispose();
   }
 
@@ -1079,6 +1081,95 @@ class _AgentResultCard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
+        Text(
+          result.message,
+          style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+        ),
+        if (result.status == AgentDispatchStatus.scheduled &&
+            result.intent.scheduledTime != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            '⏰ ${_formatDateTime(result.intent.scheduledTime!)}',
+            style: const TextStyle(color: Color(0xFF5AB8F0), fontSize: 13),
+          ),
+        ],
+        if (showActions) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: onConfirm,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFE05B4C),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  icon: const Icon(Icons.check, size: 16),
+                  label: const Text('تأكيد التنفيذ'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onCancel,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Color(0xFF3A5068)),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  icon: const Icon(Icons.close, size: 16),
+                  label: const Text('إلغاء'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  static String _iconFor(AgentDispatchStatus status) {
+    return switch (status) {
+      AgentDispatchStatus.executed => '✅',
+      AgentDispatchStatus.scheduled => '⏰',
+      AgentDispatchStatus.needsConfirmation => '⚠️',
+      AgentDispatchStatus.failed => '❌',
+      AgentDispatchStatus.unknownCommand => '❓',
+    };
+  }
+
+  static String _titleFor(AgentDispatchStatus status) {
+    return switch (status) {
+      AgentDispatchStatus.executed => 'تم تنفيذ الأمر بنجاح',
+      AgentDispatchStatus.scheduled => 'تمت جدولة المهمة بنجاح',
+      AgentDispatchStatus.needsConfirmation => 'مطلوب تأكيد عملية مالية',
+      AgentDispatchStatus.failed => 'فشل التنفيذ',
+      AgentDispatchStatus.unknownCommand => 'أمر غير معروف',
+    };
+  }
+
+  static Color _colorFor(AgentDispatchStatus status) {
+    return switch (status) {
+      AgentDispatchStatus.executed => const Color(0xFF35C77B),
+      AgentDispatchStatus.scheduled => const Color(0xFF5AB8F0),
+      AgentDispatchStatus.needsConfirmation => const Color(0xFFF0A85A),
+      AgentDispatchStatus.failed => const Color(0xFFE05B4C),
+      AgentDispatchStatus.unknownCommand => const Color(0xFF9AAABD),
+    };
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  أدوات تنسيق
+// ═══════════════════════════════════════════════
+
+String _formatDateTime(DateTime time) {
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${two(time.hour)}:${two(time.minute)} — '
+      '${time.day}/${time.month}/${time.year}';
+}
+
+6),
         Text(
           result.message,
           style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
