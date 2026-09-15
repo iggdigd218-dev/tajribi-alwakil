@@ -140,6 +140,13 @@ class VoiceService {
   /// تفعيل/تعطيل الصوت العصبي (Edge TTS). الافتراضي: مفعّل.
   static bool neuralVoiceEnabled = true;
 
+  /// آخر محرك نطق استُخدم فعلياً: 'neural' أو 'system'.
+  static String lastSpeechEngine = 'none';
+
+  /// يُستدعى عند التراجع الاضطراري لمحرك النظام — تعرضه الواجهة
+  /// للمستخدم مع السبب حتى نُشخّص شبكته/جهازه بدقة.
+  static void Function(String reason)? onNeuralFallback;
+
   /// نطق نص بصوت الوكيل الرجالي.
   ///
   /// الأولوية للمحرك العصبي من مايكروسوفت (Edge TTS — مجاني بلا مفاتيح):
@@ -149,21 +156,28 @@ class VoiceService {
   static Future<void> speak(String text) async {
     if (text.trim().isEmpty) return;
 
-    // 1) الصوت العصبي
+    // 1) الصوت العصبي (AI): Edge TTS
     if (neuralVoiceEnabled) {
       try {
         final path = await EdgeTtsService.synthesize(text);
         if (path != null) {
           final ok = await _channel.invokeMethod<bool>('playAudioFile', path) ??
               false;
-          if (ok) return;
+          if (ok) {
+            lastSpeechEngine = 'neural';
+            return;
+          }
+          EdgeTtsService.lastError ??= 'رفض المشغّل الأصلي الملف';
         }
       } on PlatformException {
-        // القناة غير جاهزة — ارتد لمحرك النظام
+        EdgeTtsService.lastError ??= 'قناة الصوت الأصلي غير جاهزة';
       }
     }
 
     // 2) الارتداد: محرك النظام المحلي
+    lastSpeechEngine = 'system';
+    final reason = EdgeTtsService.lastError ?? 'تعذر التوليد العصبي';
+    onNeuralFallback?.call(reason);
     try {
       await _channel.invokeMethod<void>('speakText', text);
     } on PlatformException {

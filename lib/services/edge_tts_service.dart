@@ -45,6 +45,10 @@ class EdgeTtsService {
   /// مهلة العملية كلها (اتصال + توليد + تنزيل).
   static const Duration _totalTimeout = Duration(seconds: 25);
 
+  /// آخر سبب فشل للتوليد العصبي — يعرضه التطبيق لتشخيص التراجع
+  /// لمحرك النظام على الجهاز الفعلي (null بعد أي نجاح).
+  static String? lastError;
+
   /// توليد كلام عصبي وإعادة مسار ملف MP3 محلي — أو null عند الفشل.
   ///
   /// [voice] اختياري؛ الافتراضي [defaultVoice] مع إعادة محاولة واحدة
@@ -61,8 +65,15 @@ class EdgeTtsService {
         : voice.trim();
 
     try {
-      return await _synthesizeWithFallbackVoice(clean, primary, timeout);
-    } catch (_) {
+      final path = await _synthesizeWithFallbackVoice(clean, primary, timeout);
+      if (path == null) {
+        lastError ??= 'رفض الخادم كل إصدارات DRM المرشحة';
+      } else {
+        lastError = null;
+      }
+      return path;
+    } catch (e) {
+      lastError = 'استثناء: ${e.toString().split(':').first}';
       return null; // أي استثناء = تراجع صامت لمحرك النظام
     }
   }
@@ -138,7 +149,8 @@ class EdgeTtsService {
         customClient: httpClient,
         compression: CompressionOptions.compressionOff,
       ).timeout(const Duration(seconds: 12));
-    } catch (_) {
+    } catch (e) {
+      lastError = 'اتصال: ${e.toString().split('(').first.trim()}';
       return null; // 403/شبكة → المجرّب يجرب الإصدار التالي
     }
 
@@ -193,7 +205,10 @@ class EdgeTtsService {
       );
 
       final ok = await done.future;
-      if (!ok || chunks.isEmpty) return null;
+      if (!ok || chunks.isEmpty) {
+        lastError = 'الخادم أغلق البث دون صوت (ربما شبكة وسيطة تحجب WSS)';
+        return null;
+      }
 
       final file = File(
         '${Directory.systemTemp.path}/'

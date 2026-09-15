@@ -61,6 +61,12 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     VoiceService.init();
     VoiceService.onVoiceCommandExecuted = _onVoiceCommandExecuted;
     VoiceService.onAssistantReply = _onAssistantReply;
+    // تشخيص الصوت: عند التراجع الاضطراري لمحرك النظام أظهر السبب
+    VoiceService.onNeuralFallback = (reason) {
+      if (!mounted) return;
+      _showSnack('⚠ الصوت العصبي (AI) غير متاح الآن: $reason'
+          ' — استُخدم محرك النظام');
+    };
     GeminiService.loadSavedKey();
 
     _refreshStatus();
@@ -72,6 +78,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
 
   @override
   void dispose() {
+    VoiceService.onNeuralFallback = null;
     _statusTimer?.cancel();
     _inputController.dispose();
     _scrollController.dispose();
