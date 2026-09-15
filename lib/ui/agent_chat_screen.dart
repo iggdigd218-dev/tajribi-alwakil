@@ -68,10 +68,11 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
             '• "افتح واتساب" / "افتح محفظة جوادي"',
       ),
     );
-    // ───── المرحلة 5: تهيئة الدورة الصوتية ─────
+    // ───── المرحلة 5: تهيئة الدورة الصوتية + تحميل مفتاح Gemini المحفوظ ─────
     VoiceService.init();
     VoiceService.onVoiceCommandExecuted = _onVoiceCommandExecuted;
     VoiceService.onAssistantReply = _onAssistantReply;
+    GeminiService.loadSavedKey();
 
     _refreshStatus();
     _statusTimer = Timer.periodic(

@@ -187,12 +187,8 @@ class GeminiService {
 
       final map = _decodeLooseJson(raw);
       if (map == null) {
-        // رد غير مهيكل — نعتبره رداً لغوياً صالحاً للنطق
-        return GeminiVoiceOutcome(
-          reply: raw.trim(),
-          actions: const [],
-          error: 'رد غير مهيكل (عولج كنص)',
-        );
+        // رد غير مهيكل — نعتبره رداً لغوياً صالحاً للنطق بلا خطأ
+        return GeminiVoiceOutcome(reply: raw.trim(), actions: const []);
       }
 
       final reply = (map['reply'] as String?)?.trim() ?? '';

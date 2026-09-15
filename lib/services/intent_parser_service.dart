@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/agent_action_intent.dart';
+import 'gemini_service.dart';
 
 /// نتيجة استخراج وقت الجدولة من النص.
 class _ScheduleExtraction {
@@ -40,6 +41,10 @@ class IntentParserService {
   // ═══════════════════════════════════════════
   //  1) المحلل المحلي (Offline First)
   // ═══════════════════════════════════════════
+
+  /// تحليل فوري بدون إنترنت — يعيد null إذا لم يفهم الأمر.
+  /// الاسم المستقر الذي تستدعيه الواجهة: [parseLocal].
+  static AgentActionIntent? parseLocal(String rawText) => parse(rawText);
 
   /// تحليل فوري بدون إنترنت — يعيد null إذا لم يفهم الأمر.
   static AgentActionIntent? parse(String rawText) {
@@ -85,17 +90,19 @@ class IntentParserService {
     return null;
   }
 
-  /// المحلل الهجين: محلي أولاً، ثم Gemini للأوامر المعقدة
-  /// (يتطلب تمرير [geminiApiKey] أو بناء التطبيق مع
-  /// `--dart-define=GEMINI_API_KEY=...`).
+  /// المحلل الهجين: محلي أولاً، ثم Gemini للأوامر المعقدة.
+  /// المفتاح: الوسيط الصريح، وإلا [GeminiService.apiKey]
+  /// (المفتاح البرمجي المحفوظ من الإعدادات يتقدم على --dart-define).
   static Future<AgentActionIntent?> parseSmart(
     String rawText, {
     String? geminiApiKey,
   }) async {
-    final local = parse(rawText);
+    final local = parseLocal(rawText);
     if (local != null) return local;
 
-    final key = geminiApiKey ?? const String.fromEnvironment('GEMINI_API_KEY');
+    final key = (geminiApiKey != null && geminiApiKey.trim().isNotEmpty)
+        ? geminiApiKey.trim()
+        : GeminiService.apiKey;
     if (key.isEmpty) return null;
 
     return parseWithGemini(rawText, apiKey: key);
