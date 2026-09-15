@@ -4,6 +4,9 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
+def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0'
+
 android {
     namespace = "com.example.app"
     compileSdk = 34
@@ -49,8 +52,10 @@ android {
         // dispatchGesture (المرحلة 1) يتطلب API 24 كحد أدنى
         minSdk = 24
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.2.0"
+        // النسخة من pubspec.yaml حصراً (flutter.versionCode/Name) —
+        // كانت مثبّتة يدوياً فتبقى 1.2.0+4 مهما رفعنا pubspec!
+        versionCode = flutterVersionCode.toInteger()
+        versionName = flutterVersionName
     }
 
     buildTypes {
