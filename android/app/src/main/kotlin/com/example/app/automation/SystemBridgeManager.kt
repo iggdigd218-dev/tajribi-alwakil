@@ -96,15 +96,15 @@ object SystemBridgeManager : MethodChannel.MethodCallHandler {
         }
         val listener = object : Shizuku.OnRequestPermissionResultListener {
             override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
-                Shizuku.removeRequestPermissionListener(this)
+                Shizuku.removeRequestPermissionResultListener(this)
                 postMain { onResult(grantResult == PackageManager.PERMISSION_GRANTED) }
             }
         }
-        Shizuku.addRequestPermissionListener(listener)
+        Shizuku.addRequestPermissionResultListener(listener)
         try {
             Shizuku.requestPermission(SHIZUKU_REQUEST_CODE)
         } catch (e: Exception) {
-            Shizuku.removeRequestPermissionListener(listener)
+            Shizuku.removeRequestPermissionResultListener(listener)
             postMain { onResult(false) }
         }
     }
