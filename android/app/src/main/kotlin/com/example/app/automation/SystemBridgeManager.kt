@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.provider.Settings
+import android.util.Log
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -268,16 +269,21 @@ object SystemBridgeManager : MethodChannel.MethodCallHandler {
         if (ctx.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) !=
             PackageManager.PERMISSION_GRANTED
         ) return ""
-        val phone = android.provider.ContactsContract.CommonDataKinds.Phone
+        val phoneUri =
+            android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        val dnCol =
+            android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+        val numCol =
+            android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER
         var best = ""
         try {
             ctx.contentResolver.query(
-                phone.CONTENT_URI,
-                arrayOf(phone.DISPLAY_NAME, phone.NUMBER),
+                phoneUri,
+                arrayOf(dnCol, numCol),
                 null, null, null,
             )?.use { c ->
-                val dnI = c.getColumnIndexOrThrow(phone.DISPLAY_NAME)
-                val numI = c.getColumnIndexOrThrow(phone.NUMBER)
+                val dnI = c.getColumnIndexOrThrow(dnCol)
+                val numI = c.getColumnIndexOrThrow(numCol)
                 while (c.moveToNext()) {
                     val dn = c.getString(dnI)?.lowercase()?.trim() ?: continue
                     val num = c.getString(numI)?.trim() ?: continue
