@@ -234,6 +234,36 @@ class VoiceService {
     }
   }
 
+  /// نطق عينة صوتية بنمط محدّد (للمعاينة في الإعدادات) — لا يغيّر
+  /// النمط المحفوظ: يولّد بصوت النمط المطلوب ويشغّله فوراً.
+  static Future<void> speakSample(String text, VoiceProfile profile) async {
+    final clean = text.trim();
+    if (clean.isEmpty) return;
+    await stopSpeaking();
+    String? path;
+    try {
+      if (ElevenLabsTtsService.isConfigured) {
+        path = await ElevenLabsTtsService.synthesize(
+          clean,
+          voiceId: profile.elevenVoiceId,
+        );
+      }
+      path ??= await EdgeTtsService.synthesize(clean, voice: profile.edgeVoice);
+      if (path != null) {
+        final ok =
+            await _channel.invokeMethod<bool>('playAudioFile', path) ?? false;
+        if (ok) return;
+      }
+    } on PlatformException {
+      // نتحول لمحرك النظام
+    }
+    try {
+      await _channel.invokeMethod<void>('speakText', clean);
+    } on PlatformException {
+      // النطق غير متاح
+    }
+  }
+
   /// إيقاف الكلام الجاري فوراً (العصبي والنظامي معاً).
   static Future<void> stopSpeaking() async {
     try {

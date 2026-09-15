@@ -456,6 +456,18 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                   RadioListTile<String>(
                     value: profile.id,
                     groupValue: voiceProfileId,
+                    secondary: IconButton(
+                      tooltip: 'استمع لعينة',
+                      icon: const Icon(
+                        Icons.volume_up_outlined,
+                        color: Color(0xFF7FD1DA),
+                        size: 20,
+                      ),
+                      onPressed: () => VoiceService.speakSample(
+                        'السلام عليكم. أنا صوت الوكيل بنمط ${profile.label}.',
+                        profile,
+                      ),
+                    ),
                     activeColor: const Color(0xFF0E7C86),
                     dense: true,
                     contentPadding: EdgeInsets.zero,
