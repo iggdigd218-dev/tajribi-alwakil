@@ -3,11 +3,12 @@ package com.example.app.automation
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
+import android.os.ParcelFileDescriptor
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import moe.shizuku.server.IShizukuService
 import rikka.shizuku.Shizuku
-import rikka.shizuku.ShizukuProvider
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
