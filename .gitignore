@@ -18,6 +18,7 @@ android/local.properties
 android/key.properties
 *.jks
 *.keystore
+!android/app/keystore/agent-release.jks
 android/app/.cxx/
 
 # iOS (مستقبلاً)

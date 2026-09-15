@@ -68,30 +68,27 @@ jobs:
           retention-days: 90
 
       - name: Prepare GitHub Release asset
-        run: cp build/app/outputs/flutter-apk/app-release.apk agent-automation-v1.1.0.apk
+        run: cp build/app/outputs/flutter-apk/app-release.apk agent-automation-v1.1.1.apk
 
-      - name: Publish GitHub Release v1.1.0
+      - name: Publish GitHub Release v1.1.1
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.0
-          name: 🤖 وكيل الأتمتة الذكي v1.1.0
+          tag_name: v1.1.1
+          name: 🤖 وكيل الأتمتة الذكي v1.1.1
           target_commitish: ${{ github.sha }}
           draft: false
           prerelease: false
           make_latest: true
-          files: agent-automation-v1.1.0.apk
+          files: agent-automation-v1.1.1.apk
           body: |
-            تحديث بعد الإصدار الأول — الحوار عبر Gemini + المساعد والنافذة العائمة.
+            توقيع ثابت (keystore المشروع) + Gemini عبر REST v1 / gemini-1.5-flash.
 
+            - 🔐 موقّع بمفتاح إصدار ثابت — التحديثات القادمة تُثبَّت فوق هذه النسخة دون حذف
+            - 🤖 Gemini: /v1/models/gemini-1.5-flash:generateContent مع إظهار خطأ Google الأصلي
             - 🎙️ استماع دائم + اسم نداء مخصص + رد صوتي رجالي
-            - ⌨️ شات أوامر عربية (نص وصوت) — الحوار العام يذهب إلى Gemini وليس «لم أفهم»
-            - 📡 Shizuku: Package Visibility على أندرويد 11+ + واي فاي/بيانات/مكالمات/أوامر Shell
-            - 🪟 نافذة عائمة فوق التطبيقات (صلاحية العرض فوق التطبيقات من ⚙️)
-            - 🤖 VoiceInteractionService: يمكن تعيينه مساعداً افتراضياً من إعدادات النظام
-            - ⏰ جدولة دقيقة تختبر Doze
-            - 🤖 محرك Gemini للحوار والأوامر المركبة (المفتاح من داخل التطبيق ⚙️)
-            - ⚠️ العمليات المالية تتطلب تأكيداً صريحاً
+            - ⌨️ شات أوامر عربية (نص وصوت) — الحوار العام يذهب إلى Gemini
+            - 📡 Shizuku + نافذة عائمة + المساعد الافتراضي
 
-            **التثبيت:** اسمح بالتثبيت من مصادر غير معروفة، ثم فعّل «محرك الأتمتة» من إعدادات إمكانية الوصول، وشغّل Shizuku، واحفظ مفتاح Gemini من ⚙️.
+            **التثبيت فوق v1.0.0:** إن رفض النظام التحديث (اختلاف التوقيع القديم من CI) احذف النسخة الأولى مرة واحدة ثم ثبّت v1.1.1. بعدها أي إصدار جديد يُثبَّت فوقها مباشرة.
 
-            موقّع بمفتاح debug للاختبار.
+            **التفعيل:** إمكانية الوصول ← «محرك الأتمتة» • Shizuku • مفتاح Gemini من ⚙️.

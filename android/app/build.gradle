@@ -18,19 +18,30 @@ android {
         jvmTarget = '17'
     }
 
+    signingConfigs {
+        agent {
+            storeFile file("keystore/agent-release.jks")
+            storePassword "AgentAuto2026"
+            keyAlias "agent"
+            keyPassword "AgentAuto2026"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.example.app"
         // dispatchGesture (المرحلة 1) يتطلب API 24 كحد أدنى
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.1.1"
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.agent
+        }
         release {
-            // للتجربة فقط — أنشئ مفتاح توقيع خاص قبل النشر على المتجر
-            signingConfig = signingConfigs.debug
+            signingConfig = signingConfigs.agent
         }
     }
 }
