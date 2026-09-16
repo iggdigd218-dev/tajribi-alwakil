@@ -100,6 +100,10 @@ object VoiceManager : RecognitionListener {
     private var wakeLock: PowerManager.WakeLock? = null
     private var consecutiveErrors = 0
     private const val KEY_LISTENING_ON = "listening_on"
+    private var lastErrorDesc = "لا شيء"
+    private var lastErrorAt = 0L
+    private var lastHeard = "لا شيء بعد"
+    private var lastHeardAt = 0L
 
     /** مستقبل تشغيل الشاشة: بعض الواجهات تجمّد الميكروفون والشاشة مطفأة —
      *  نعيد فتح الجلسة فوراً عند التشغيل لن يبقى النداء حياً. */
@@ -264,6 +268,31 @@ object VoiceManager : RecognitionListener {
     @JvmStatic
     fun isListening(): Boolean = continuousMode
 
+    /** لقطة تشخيصية حيّة لسلسلة الاستماع — تكشف أين تنكسر على الجهاز. */
+    @JvmStatic
+    fun getDiagnostics(): String {
+        val ctx = appContext
+        val now = System.currentTimeMillis()
+        val batteryOk = if (ctx != null && android.os.Build.VERSION.SDK_INT >= 23) {
+            (ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
+                .isIgnoringBatteryOptimizations(ctx.packageName)
+        } else true
+        return buildString {
+            append("الاستماع الدائم: ").append(if (continuousMode) "نشط ✅" else "متوقف ❌").append('\n')
+            append("الخدمة الأمامية: ").append(if (AgentForegroundService.isRunning) "تعمل ✅" else "متوقفة ❌").append('\n')
+            append("الميكروفون مكتوم للنطق: ").append(if (pauseMicForTts) "نعم ❌ (علق!)" else "لا ✅").append('\n')
+            append("WakeLock: ").append(if (wakeLock?.isHeld == true) "ممسوك ✅" else "غير ممسوك ❌").append('\n')
+            append("أخطاء متتالية: ").append(consecutiveErrors).append('\n')
+            append("آخر خطأ: ").append(lastErrorDesc)
+            if (lastErrorAt > 0) append(" (قبل ").append((now - lastErrorAt) / 1000).append(" ث)")
+            append('\n')
+            append("آخر ما سُمع: ").append(lastHeard)
+            if (lastHeardAt > 0) append(" (قبل ").append((now - lastHeardAt) / 1000).append(" ث)")
+            append('\n')
+            append("إعفاء البطارية: ").append(if (batteryOk) "ممنوح ✅" else "غير ممنوح ❌ — هذا يقتل الاستماع بالخلفية!")
+        }
+    }
+
     /** يستأنف الاستماع إن كان مفعلاً قبل أن يقتل النظام العملية —
      *  تستدعيه الخدمة الأمامية عند إعادة تشغيلها اللزج (START_STICKY). */
     @JvmStatic
@@ -296,6 +325,7 @@ object VoiceManager : RecognitionListener {
         // أوقف الميكروفون حتى لا يسمع الوكيل صوته فيستجيب لنفسه
         if (continuousMode) {
             pauseMicForTts = true
+            armMicSafetyTimer()
             mainHandler.removeCallbacks(restartRunnable)
             try {
                 recognizer?.cancel()
@@ -516,6 +546,21 @@ object VoiceManager : RecognitionListener {
         }
     }
 
+    /** مؤقّت أمان: محركات النطق قد تُقتل بالخلفية فلا تصل callback الانتهاء
+     *  ويبقى الميكروفون مكتوماً للأبد — نستأنفه قسراً بعد 8 ثوانٍ. */
+    private fun armMicSafetyTimer() {
+        mainHandler.removeCallbacks(micSafetyRunnable)
+        mainHandler.postDelayed(micSafetyRunnable, 8000)
+    }
+
+    private val micSafetyRunnable = Runnable {
+        if (pauseMicForTts && continuousMode) {
+            Log.w(TAG, "⚠ مؤقّت الأمان: النطق لم يُعد callback — استئناف الميكروفون قسراً")
+            pauseMicForTts = false
+            startRecognitionSession()
+        }
+    }
+
     // ═══════════════════════════════════════════
     //  إدارة جلسات التعرف على الكلام
     // ═══════════════════════════════════════════
@@ -623,6 +668,8 @@ object VoiceManager : RecognitionListener {
             return
         }
 
+        lastErrorDesc = description
+        lastErrorAt = System.currentTimeMillis()
         consecutiveErrors++
         // إعادة بناء نظيفة تتفادى stuck على RECOGNIZER_BUSY
         destroyRecognizer()
@@ -633,6 +680,10 @@ object VoiceManager : RecognitionListener {
         consecutiveErrors = 0
 
         val spoken = extractBestText(results)
+        if (!spoken.isNullOrBlank()) {
+            lastHeard = spoken
+            lastHeardAt = System.currentTimeMillis()
+        }
         if (spoken.isNullOrBlank()) {
             scheduleRestart(RESTART_DELAY_MS)
             return

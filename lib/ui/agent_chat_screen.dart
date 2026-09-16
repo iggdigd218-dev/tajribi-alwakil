@@ -491,6 +491,39 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                           : 'تعذر حفظ النبرة');
                     },
                   ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF7FD1DA),
+                    side: const BorderSide(color: Color(0xFF22344A)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  onPressed: () async {
+                    final diag = await VoiceService.listeningDiagnostics();
+                    if (!mounted) return;
+                    showDialog<void>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        backgroundColor: const Color(0xFF131F2E),
+                        title: const Text('تشخيص الاستماع بالخلفية',
+                            style: TextStyle(color: Colors.white, fontSize: 15)),
+                        content: Text(
+                          diag,
+                          style: const TextStyle(
+                              color: Colors.white82, fontSize: 12, height: 1.7),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('إغلاق'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.bug_report_outlined, size: 18),
+                  label: const Text('تشخيص الاستماع بالخلفية',
+                      style: TextStyle(fontSize: 12)),
+                ),
                 const SizedBox(height: 12),
 
                 // ═══ اختبار الموصل ═══

@@ -107,6 +107,8 @@ class MainActivity : FlutterActivity() {
 
             "getWakeWord" -> result.success(VoiceManager.getWakeWord())
 
+            "getListeningDiagnostics" -> result.success(VoiceManager.getDiagnostics())
+
             "hasRecordAudioPermission" -> result.success(hasRecordAudioPermission())
 
             // يفتح نافذة الصلاحية ويردّ النتيجة عند إغلاقها

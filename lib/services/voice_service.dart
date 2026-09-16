@@ -279,6 +279,16 @@ class VoiceService {
     }
   }
 
+  /// لقطة تشخيصية حيّة لسلسلة الاستماع بالخلفية (لكشف أين تنكسر).
+  static Future<String> listeningDiagnostics() async {
+    try {
+      return await _channel.invokeMethod<String>('getListeningDiagnostics') ??
+          'التشخيص غير متاح';
+    } on PlatformException {
+      return 'التشخيص غير متاح';
+    }
+  }
+
   /// إيقاف الكلام الجاري فوراً (العصبي والنظامي معاً).
   static Future<void> stopSpeaking() async {
     try {
