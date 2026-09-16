@@ -104,6 +104,8 @@ object VoiceManager : RecognitionListener {
     private var lastErrorAt = 0L
     private var lastHeard = "لا شيء بعد"
     private var lastHeardAt = 0L
+    private var awaitingCommand = false
+    private var awaitingUntil = 0L
 
     /** مستقبل تشغيل الشاشة: بعض الواجهات تجمّد الميكروفون والشاشة مطفأة —
      *  نعيد فتح الجلسة فوراً عند التشغيل لن يبقى النداء حياً. */
@@ -596,7 +598,7 @@ object VoiceManager : RecognitionListener {
         }
 
     private fun startRecognitionSession() {
-        if (!continuousMode) return
+        if (!continuousMode || pauseMicForTts) return
         val current = recognizer ?: createRecognizer().also { recognizer = it }
         try {
             current.startListening(recognitionIntent())
@@ -642,9 +644,10 @@ object VoiceManager : RecognitionListener {
     override fun onBufferReceived(buffer: ByteArray?) { /* غير مستخدم */ }
 
     override fun onEndOfSpeech() {
-        // انتهى الكلام — يصل onResults عادة بعدها؛ نجددول احتياطياً
-        // تحسباً للمحركات التي لا ترسل النتائج بعد صمت طويل.
-        scheduleRestart(RESTART_DELAY_MS + 400)
+        // انتهى الكلام — onResults يصل بعدها مباشرة عادة. لا نعيد الفتح
+        // فوراً (كان ذلك يقتل النتيجة قبل وصولها = أمر يضيع وميكروفون
+        // يفتح ويغلق بجنون) — فقط Watchdog بطيء إن تجمّد المحرك.
+        scheduleRestart(6000)
     }
 
     override fun onError(error: Int) {
@@ -702,18 +705,39 @@ object VoiceManager : RecognitionListener {
             else -> null
         }
 
-        if (!command.isNullOrBlank()) {
-            Log.i(TAG, "🎙️ اسم النداء مكتشف — الأمر: \"$command\"")
-            FloatingOverlayManager.setStatus("🎙️ $command")
-            invokeDart("onWakeWordTriggered", command)
-        } else if (normalized.contains(normalizedWake)) {
-            Log.i(TAG, "نودي باسم الوكيل دون أمر — تجاهل بهدوء")
-        } else {
-            Log.d(TAG, "كلام بدون اسم النداء — تجاهل صامت وإعادة فتح الميكروفون")
+        val wakeHeard = command != null || normalized.contains(normalizedWake)
+        // نودي بالاسم دون أمر: نافذة التقاط 6 ثوانٍ للأمر التالي وحده
+        // (مثل «هاي جوجل»: النداء ثم الأمر في جملة منفصلة).
+        if (command.isNullOrBlank() && awaitingCommand &&
+            System.currentTimeMillis() < awaitingUntil
+        ) {
+            command = normalized
         }
 
-        // في كل الحالات: إعادة فتح الميكروفون بصمت
-        scheduleRestart(RESTART_DELAY_MS)
+        when {
+            !command.isNullOrBlank() -> {
+                Log.i(TAG, "🎙️ اسم النداء مكتشف — الأمر: \"$command\"")
+                awaitingCommand = false
+                // هدوء تام أثناء التنفيذ والنطق — لا فتح/إغلاق مجنون؛
+                // يُستأنف الاستماع تلقائياً بعد انتهاء النطق.
+                pauseMicForTts = true
+                armMicSafetyTimer()
+                FloatingOverlayManager.setStatus("🎙️ $command")
+                invokeDart("onWakeWordTriggered", command)
+                return
+            }
+            wakeHeard -> {
+                Log.i(TAG, "نودي باسم الوكيل — أنصت للأمر…")
+                awaitingCommand = true
+                awaitingUntil = System.currentTimeMillis() + 6000
+                FloatingOverlayManager.setStatus("أنصت لك…")
+                scheduleRestart(RESTART_DELAY_MS)
+            }
+            else -> {
+                Log.d(TAG, "كلام بدون اسم النداء — تجاهل صامت")
+                scheduleRestart(RESTART_DELAY_MS)
+            }
+        }
     }
 
     override fun onPartialResults(partialResults: Bundle?) {
