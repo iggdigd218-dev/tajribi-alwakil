@@ -26,7 +26,8 @@ class AgentChatScreen extends StatefulWidget {
 class _ChatEntry {
   _ChatEntry.user(this.text)
       : isUser = true,
-        result = null;
+        result = null,
+        source = null;
   _ChatEntry.agent({this.text, this.result, this.source}) : isUser = false;
 
   final bool isUser;
