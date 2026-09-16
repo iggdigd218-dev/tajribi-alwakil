@@ -118,6 +118,10 @@ object VoiceManager : RecognitionListener {
     private val eventLog = ArrayDeque<String>(40)
     private var lastReadyAt = 0L
 
+    // ═══ وضع الضغط للتحدث: استماع بلا اسم نداء — ينتهي برفع الإصبع ═══
+    @Volatile
+    private var pushToTalk = false
+
     @JvmStatic
     fun logEvent(type: String, detail: String = "") {
         val t = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
@@ -369,6 +373,56 @@ object VoiceManager : RecognitionListener {
 
     /** يستأنف الاستماع إن كان مفعلاً قبل أن يقتل النظام العملية —
      *  تستدعيه الخدمة الأمامية عند إعادة تشغيلها اللزج (START_STICKY). */
+    /**
+     * بدء وضع الضغط للتحدث: يستمع فوراً بلا اسم نداء.
+     * يُوقف الجلسة الدائمة مؤقتاً منعاً لتنازع الميكروفون.
+     */
+    @JvmStatic
+    fun startPushToTalk(): Boolean {
+        if (appContext == null) return false
+        pushToTalk = true
+        logEvent("PTT_START")
+        mainHandler.post {
+            try { recognizer?.cancel() } catch (_: Exception) {}
+            val current = recognizer ?: createRecognizer().also { recognizer = it }
+            try {
+                current.startListening(recognitionIntent())
+            } catch (e: Exception) {
+                logEvent("PTT_FAIL", "${e.message}")
+                pushToTalk = false
+                resumeContinuousIfNeeded()
+            }
+        }
+        return true
+    }
+
+    /** رفع الإصبع: إنهاء التسجيل وانتظار النتيجة النهائية (مهلة 3 ث). */
+    @JvmStatic
+    fun stopPushToTalk() {
+        if (!pushToTalk) return
+        logEvent("PTT_RELEASE")
+        mainHandler.post {
+            try { recognizer?.stopListening() } catch (_: Exception) {}
+            mainHandler.postDelayed({
+                if (pushToTalk) {
+                    pushToTalk = false
+                    logEvent("PTT_TIMEOUT")
+                    try { recognizer?.cancel() } catch (_: Exception) {}
+                    resumeContinuousIfNeeded()
+                }
+            }, 3000)
+        }
+    }
+
+    /** بعد انتهاء PTT: إحياء الجلسة الدائمة إن كانت مفعّلة. */
+    private fun resumeContinuousIfNeeded() {
+        if (continuousMode && !pauseMicForTts) {
+            lastReadyAt = System.currentTimeMillis()
+            opensWithoutReady = 0
+            openContinuousSession()
+        }
+    }
+
     /** بعث الجلسة إن صمتّت 90 ثانية بلا READY — موت صامت للمتعرف. */
     private fun armSessionHealer() {
         mainHandler.removeCallbacks(healerRunnable)
@@ -756,6 +810,13 @@ object VoiceManager : RecognitionListener {
             else -> "خطأ غير معروف ($error)"
         }
         logEvent("ERR", "$description($error)")
+        if (pushToTalk) {
+            pushToTalk = false
+            logEvent("PTT_ERR", "$description($error)")
+            invokeDart("onVoiceError", description)
+            resumeContinuousIfNeeded()
+            return
+        }
 
         if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
             notifyVoiceError("صلاحية الميكروفون سُحبت — تم إيقاف الاستماع")
@@ -814,6 +875,13 @@ object VoiceManager : RecognitionListener {
             return
         }
         logEvent("HEARD", spoken.take(40))
+        if (pushToTalk) {
+            pushToTalk = false
+            logEvent("PTT_RESULT", spoken.take(40))
+            if (spoken.isNotBlank()) invokeDart("onVoiceCommand", spoken)
+            resumeContinuousIfNeeded()
+            return
+        }
 
         // ── كشف اسم النداء على النص المُطبَّع ──
         val normalized = normalizeArabic(spoken)

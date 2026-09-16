@@ -50,6 +50,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
   bool _shizukuGranted = false;
   bool _foregroundActive = false;
   bool _sending = false;
+  bool _recording = false;
 
   @override
   void initState() {
@@ -67,6 +68,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     VoiceService.init();
     VoiceService.onVoiceCommandExecuted = _onVoiceCommandExecuted;
     VoiceService.onAssistantReply = _onAssistantReply;
+    VoiceService.onPushToTalkResult = _onPushToTalkResult;
     // تشخيص الصوت: عند التراجع الاضطراري لمحرك النظام أظهر السبب
     VoiceService.onNeuralFallback = (reason) {
       if (!mounted) return;
@@ -85,6 +87,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
   @override
   void dispose() {
     VoiceService.onNeuralFallback = null;
+    VoiceService.onPushToTalkResult = null;
     _statusTimer?.cancel();
     _inputController.dispose();
     _scrollController.dispose();
@@ -102,6 +105,33 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       _shizukuGranted = shizuku.permissionGranted;
       _foregroundActive = foreground;
     });
+  }
+
+  // ═══ الضغط للتحدث: أمسك الزر وتكلم — أفلته فينتهي التسجيل وتصل الإجابة ═══
+  Future<void> _startRecording() async {
+    if (_sending || _recording) return;
+    final ok = await VoiceService.startPushToTalk();
+    if (!ok || !mounted) return;
+    setState(() => _recording = true);
+  }
+
+  void _stopRecording() {
+    if (!_recording) return;
+    VoiceService.endPushToTalk();
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted && _recording) setState(() => _recording = false);
+    });
+  }
+
+  void _onPushToTalkResult(String text) {
+    if (!mounted || text.trim().isEmpty) return;
+    setState(() {
+      _recording = false;
+      _entries.add(_ChatEntry.user(text));
+      _sending = true;
+    });
+    _scrollToBottom();
+    _runPipeline(text);
   }
 
   Future<void> _handleSend() async {
@@ -1265,7 +1295,9 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
               onSubmitted: (_) => _handleSend(),
               style: const TextStyle(color: Colors.white, fontSize: 15),
               decoration: InputDecoration(
-                hintText: 'اكتب أمراً مثل: شغل الواي فاي...',
+                hintText: _recording
+                    ? '🎙️ أستمع إليك… أفلت الزر للإرسال'
+                    : 'اكتب أمراً… أو أمسك زر الميكروفون وتكلم',
                 hintStyle: const TextStyle(color: Color(0xFF5A7A96)),
                 filled: true,
                 fillColor: Color(0xFF0E1621),
@@ -1275,6 +1307,32 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                   borderRadius: BorderRadius.circular(24),
                   borderSide: BorderSide.none,
                 ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onLongPressStart: (_) => _startRecording(),
+            onLongPressEnd: (_) => _stopRecording(),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _recording
+                    ? const Color(0xFFB3372C)
+                    : const Color(0xFF0E1621),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: _recording
+                      ? const Color(0xFFE05B4C)
+                      : const Color(0xFF22344A),
+                ),
+              ),
+              child: Icon(
+                _recording ? Icons.graphic_eq : Icons.mic_none,
+                color: _recording ? Colors.white : const Color(0xFF7FB2C9),
+                size: 22,
               ),
             ),
           ),

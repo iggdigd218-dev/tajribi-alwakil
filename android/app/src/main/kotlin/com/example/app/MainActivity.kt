@@ -164,6 +164,13 @@ class MainActivity : FlutterActivity() {
                 if (hasRecordAudioPermission()) VoiceManager.startListening() else false
             )
 
+            "startPushToTalk" -> result.success(VoiceManager.startPushToTalk())
+
+            "stopPushToTalk" -> {
+                VoiceManager.stopPushToTalk()
+                result.success(null)
+            }
+
             "stopListening" -> {
                 VoiceManager.stopListening()
                 result.success(true)

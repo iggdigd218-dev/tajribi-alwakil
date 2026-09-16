@@ -40,6 +40,9 @@ class VoiceService {
   /// تُنبَّه الواجهة عند رد الوكيل اللغوي (ليُعرض في الشات).
   static void Function(String reply)? onAssistantReply;
 
+  /// نتيجة الضغط للتحدث (بلا اسم نداء) — تصل عند رفع الإصبع.
+  static void Function(String text)? onPushToTalkResult;
+
   static bool _initialized = false;
   static bool _processing = false;
 
@@ -81,6 +84,17 @@ class VoiceService {
         });
         if (command.trim().isNotEmpty) {
           await _processVoiceCommand(command.trim());
+        }
+        return null;
+
+      case 'onVoiceCommand':
+        final text = call.arguments as String? ?? '';
+        if (text.trim().isEmpty) return null;
+        final cb = onPushToTalkResult;
+        if (cb != null) {
+          cb(text.trim());
+        } else {
+          await _processVoiceCommand(text.trim());
         }
         return null;
 
@@ -130,6 +144,29 @@ class VoiceService {
   }
 
   /// حفظ اسم الوكيل (كلمة النداء) — يُخزَّن في SharedPreferences أصلياً.
+  /// بدء وضع الضغط للتحدث — استماع فوري بلا اسم نداء.
+  static Future<bool> startPushToTalk() async {
+    try {
+      var has =
+          await _channel.invokeMethod<bool>('hasRecordAudioPermission') ?? false;
+      if (!has) {
+        has = await _channel.invokeMethod<bool>('requestRecordAudioPermission') ??
+            false;
+      }
+      if (!has) return false;
+      return await _channel.invokeMethod<bool>('startPushToTalk') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// رفع الإصبع: إنهاء التسجيل — النتيجة تصل عبر onPushToTalkResult.
+  static Future<void> endPushToTalk() async {
+    try {
+      await _channel.invokeMethod<void>('stopPushToTalk');
+    } catch (_) {}
+  }
+
   static Future<bool> setWakeWord(String name) async {
     final clean = name.trim();
     if (clean.isEmpty) return false;
