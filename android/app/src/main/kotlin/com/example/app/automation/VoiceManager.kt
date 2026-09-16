@@ -142,7 +142,9 @@ object VoiceManager : RecognitionListener {
                 }
                 rec.startRecording()
                 val buf = ShortArray(minBuf)
-                var floor = 150.0
+                // أرضية الضجيج تتعاير ذاتياً مع البيئة (مروحة، شارع، صمت)
+                var floor = 300.0
+                var sustain = 0
                 while (watching) {
                     val n = rec.read(buf, 0, buf.size)
                     if (n <= 0) continue
@@ -152,15 +154,19 @@ object VoiceManager : RecognitionListener {
                         sum += v * v
                     }
                     val rms = kotlin.math.sqrt(sum / n)
-                    if (rms < floor * 2) floor = floor * 0.995 + rms * 0.005
-                    val threshold = kotlin.math.max(floor * 3.5, 350.0)
-                    if (rms > threshold &&
+                    // تتبع بطيء للأرضية؛ سقف floor*6 حتى لا يجرّها الكلام لأعلى
+                    floor = floor * 0.99 + rms.coerceAtMost(floor * 6) * 0.01
+                    val threshold = kotlin.math.max(floor * 4.0, 900.0)
+                    sustain = if (rms > threshold) sustain + 1 else 0
+                    if (sustain >= 3 &&
                         !pauseMicForTts && continuousMode && !sessionActive &&
                         System.currentTimeMillis() > cooldownUntil
                     ) {
                         sessionActive = true
+                        sustain = 0
+                        cooldownUntil = System.currentTimeMillis() + 2500
                         mainHandler.post { openSession() }
-                        Thread.sleep(600) // دع الجلسة تلتقط بداية الكلام
+                        Thread.sleep(400) // دع الجلسة تلتقط بداية الكلام
                     }
                 }
             } catch (e: Exception) {
