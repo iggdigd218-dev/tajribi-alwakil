@@ -19,10 +19,10 @@ class EdgeTtsService {
   EdgeTtsService._();
 
   /// الصوت العصبي العربي الرجالي الافتراضي (سعودي — هاديء وواضح).
-  static const String defaultVoice = 'ar-SA-HamedNeural';
+  static const String defaultVoice = 'ar-SA-ZariyahNeural';
 
   /// الصوت البديل (مصري) إن رُفض الأساسي.
-  static const String fallbackVoice = 'ar-EG-ShakirNeural';
+  static const String fallbackVoice = 'ar-EG-SalmaNeural';
 
   /// رمز العميل العلني الثابت لتطبيق Edge.
   static const String _trustedClientToken =

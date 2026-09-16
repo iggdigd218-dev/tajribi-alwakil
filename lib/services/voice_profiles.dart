@@ -18,15 +18,15 @@ class VoiceProfile {
   static const List<VoiceProfile> all = [
     VoiceProfile(
       id: 'calm',
-      label: 'عميق هادئ',
-      description: 'سرد سعودي مطمئن بإيقاع بطيء',
-      edgeVoice: 'ar-SA-HamedNeural',
+      label: 'أنثوي هادئ',
+      description: 'صوت نسائي سعودي مطمئن بإيقاع هادئ',
+      edgeVoice: 'ar-SA-ZariyahNeural',
     ),
     VoiceProfile(
       id: 'news',
-      label: 'إخباري واضح',
-      description: 'نبرة مصرية واضحة كنشرات الأخبار',
-      edgeVoice: 'ar-EG-ShakirNeural',
+      label: 'أنثوي إخباري',
+      description: 'صوت نسائي مصري واضح كنشرات الأخبار',
+      edgeVoice: 'ar-EG-SalmaNeural',
     ),
     VoiceProfile(
       id: 'warm',

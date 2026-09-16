@@ -214,23 +214,28 @@ class GeminiService {
   /// أولوية الاستخدام: مفتاح الإعدادات > متغير GEMINI_API_KEY > المدمج.
   static const String builtInApiKey =
       String.fromEnvironment('AGENT_BUILTIN_GROQ_KEY');
+  static const String builtInGeminiKey =
+      String.fromEnvironment('AGENT_BUILTIN_GEMINI_KEY');
   static const String builtInProviderId = 'groq';
   static const String builtInModel = 'qwen/qwen3.8-27b';
 
   /// هل يعمل التطبيق الآن على المفتاح المدمج (لا مفتاح مستخدم)؟
-  static bool get isUsingBuiltInKey =>
-      builtInApiKey.isNotEmpty &&
-      _programmaticKey == null &&
-      const String.fromEnvironment('GEMINI_API_KEY').isEmpty &&
-      providerId == builtInProviderId;
+  static bool get isUsingBuiltInKey {
+    if (_programmaticKey != null) return false;
+    if (const String.fromEnvironment('GEMINI_API_KEY').isNotEmpty) return false;
+    if (providerId == builtInProviderId) return builtInApiKey.isNotEmpty;
+    if (providerId == 'gemini') return builtInGeminiKey.isNotEmpty;
+    return false;
+  }
 
   static String get apiKey {
     final user = _programmaticKey;
     if (user != null && user.isNotEmpty) return user;
     final env = const String.fromEnvironment('GEMINI_API_KEY');
     if (env.isNotEmpty) return env;
-    // المفتاح المدمج صالح لمزوده فقط — لا يُرسل لغير Groq أبداً
+    // كل مفتاح مدمج يُرسل لمزوده فقط — لا يتسرب بينهما أبداً
     if (providerId == builtInProviderId) return builtInApiKey;
+    if (providerId == 'gemini') return builtInGeminiKey;
     return '';
   }
 
@@ -243,7 +248,7 @@ class GeminiService {
   static String get providerLabel => byId(providerId).label;
 
   static const String _systemPrompt = '''
-أنت "حمود" (وهو اسمك الذي يناديك به المستخدم): مساعد شخصي ذكر، وقور، سريع البديهة، ومحترم. إن سئلت عن اسمك فأجب: حمود.
+أنت "حمود" (وهو اسمك الذي يناديك به المستخدم): مساعد شخصي وقور، سريع البديهة، ومحترم. إن سئلت عن اسمك فأجب: حمود.
 تتحاور بالعربية الفصحى المبسطة بنبرة رصينة هادئة تناسب الرد الصوتي.
 أنت مساعد ذكي للأتمتة والتحكم بالنظام باللغة العربية. تعرف جهاز المستخدم: تطبيقاته المثبتة وحالته، وتستطيع تنفيذ الأوامر عليه.
 
