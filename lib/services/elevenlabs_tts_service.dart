@@ -16,11 +16,8 @@ class ElevenLabsTtsService {
 
   static const String apiKey = String.fromEnvironment('AGENT_ELEVENLABS_KEY');
 
-  /// صوت متعدد اللغات طبيعي (يعمل للعربية عبر multilingual v2).
-  static const String defaultVoiceId = '21m00Tcm4TlvDq8ikWAM';
-
-  /// صوت رجالي بديل إن رُفض الأساسي.
-  static const String fallbackVoiceId = 'onwK4e9ZLuTAKqWW03F9';
+  /// الصوت الوحيد المعتمد (طلب المستخدم): Wim44P0dU9HtjyzNnFsv
+  static const String defaultVoiceId = 'Wim44P0dU9HtjyzNnFsv';
 
   static const String modelId = 'eleven_multilingual_v2';
 
@@ -41,13 +38,8 @@ class ElevenLabsTtsService {
     final clean = text.trim();
     if (!isConfigured || clean.isEmpty) return null;
 
-    final primary = (voiceId == null || voiceId.trim().isEmpty)
-        ? defaultVoiceId
-        : voiceId.trim();
-
-    var path = await _attempt(clean, primary, timeout);
-    path ??= await _attempt(clean, fallbackVoiceId, timeout);
-    return path;
+    // صوت واحد ثابت — لا بدائل ولا أنماط
+    return await _attempt(clean, defaultVoiceId, timeout);
   }
 
   static Future<String?> _attempt(

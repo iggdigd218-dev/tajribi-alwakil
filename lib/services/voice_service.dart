@@ -195,10 +195,7 @@ class VoiceService {
       try {
         final profile = voiceProfile;
         if (ElevenLabsTtsService.isConfigured) {
-          path = await ElevenLabsTtsService.synthesize(
-            text,
-            voiceId: profile.elevenVoiceId,
-          );
+          path = await ElevenLabsTtsService.synthesize(text);
           if (path != null) engine = 'elevenlabs';
         }
         if (path == null) {
@@ -258,10 +255,7 @@ class VoiceService {
     String? path;
     try {
       if (ElevenLabsTtsService.isConfigured) {
-        path = await ElevenLabsTtsService.synthesize(
-          clean,
-          voiceId: profile.elevenVoiceId,
-        );
+        path = await ElevenLabsTtsService.synthesize(clean);
       }
       path ??= await EdgeTtsService.synthesize(clean, voice: profile.edgeVoice);
       if (path != null) {

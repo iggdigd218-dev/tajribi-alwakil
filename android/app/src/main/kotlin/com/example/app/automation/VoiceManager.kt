@@ -111,113 +111,19 @@ object VoiceManager : RecognitionListener {
     private var awaitingUntil = 0L
     private var oneShot = false
 
-    // ═══ حارس الطاقة الصوتية: يستمع بصمت تام بلا جلسات تعرف ─══
-    // لا تُفتح جلسة التعرف إلا عند رصد طاقة كلام فعلية — كما تفعل
-    // المساعدات الرقمية: الصمت لا يفتح ولا يغلق شيئاً إطلاقاً.
-    @Volatile private var watching = false
-    @Volatile private var sessionActive = false
-    private var watchThread: Thread? = null
-    private var cooldownUntil = 0L
-
-    private fun startAudioWatchdog() {
-        if (watching) return
-        watching = true
-        watchThread = Thread({
-            val sr = 16000
-            val minBuf = AudioRecord.getMinBufferSize(
-                sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
-            )
-            var rec: AudioRecord? = null
-            try {
-                rec = AudioRecord(
-                    MediaRecorder.AudioSource.MIC, sr,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    minBuf * 2,
-                )
-                if (rec.state != AudioRecord.STATE_INITIALIZED) {
-                    Log.e(TAG, "حارس الصوت: تهيئة AudioRecord فشلت")
-                    watching = false
-                    return@Thread
-                }
-                rec.startRecording()
-                val buf = ShortArray(minBuf)
-                // أرضية الضجيج تتعاير ذاتياً مع البيئة (مروحة، شارع، صمت)
-                var floor = 300.0
-                var sustain = 0
-                while (watching) {
-                    val n = rec.read(buf, 0, buf.size)
-                    if (n <= 0) continue
-                    var sum = 0.0
-                    for (i in 0 until n) {
-                        val v = buf[i].toDouble()
-                        sum += v * v
-                    }
-                    val rms = kotlin.math.sqrt(sum / n)
-                    // تتبع بطيء للأرضية؛ سقف floor*6 حتى لا يجرّها الكلام لأعلى
-                    floor = floor * 0.99 + rms.coerceAtMost(floor * 6) * 0.01
-                    val threshold = kotlin.math.max(floor * 4.0, 900.0)
-                    sustain = if (rms > threshold) sustain + 1 else 0
-                    if (sustain >= 3 &&
-                        !pauseMicForTts && continuousMode && !sessionActive &&
-                        System.currentTimeMillis() > cooldownUntil
-                    ) {
-                        sessionActive = true
-                        sustain = 0
-                        cooldownUntil = System.currentTimeMillis() + 2500
-                        mainHandler.post { openSession() }
-                        Thread.sleep(400) // دع الجلسة تلتقط بداية الكلام
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "حارس الصوت توقف: ${e.message}")
-            } finally {
-                try {
-                    rec?.stop()
-                    rec?.release()
-                } catch (_: Exception) {
-                }
-                watching = false
-            }
-        }, "audio-watchdog").apply { isDaemon = true; start() }
-    }
-
-    private fun stopAudioWatchdog() {
-        watching = false
-        try {
-            watchThread?.interrupt()
-        } catch (_: Exception) {
-        }
-        watchThread = null
-    }
-
-    /** فتح جلسة تعرف واحدة مع مؤقّت علق (12 ث) إن لم تصل نتيجة. */
-    private fun openSession() {
-        if (!continuousMode || pauseMicForTts) {
-            sessionActive = false
-            return
-        }
-        sessionActive = true
+    /** جلسة استماع دائمة صامتة على نفس المثيل — بلا إعادة ربط وبلا
+     *  أي تغيير واجهة: المؤشر يبقى ثابتاً والميكروفون لا «يفتح ويغلق».
+     *  الصمت يُعيد تدوير الجلسة بصمت تام، والكلام يُلتقط من أوله. */
+    private fun openContinuousSession() {
+        if (!continuousMode || pauseMicForTts) return
         try {
             val current = recognizer ?: createRecognizer().also { recognizer = it }
             current.startListening(recognitionIntent())
-            mainHandler.postDelayed({
-                if (sessionActive) {
-                    Log.w(TAG, "جلسة علقت 12 ث — تُصفَّر بصمت")
-                    sessionActive = false
-                    destroyRecognizer()
-                }
-            }, 12000)
         } catch (e: Exception) {
-            Log.e(TAG, "openSession فشل: ${e.message}")
-            sessionActive = false
+            Log.e(TAG, "openContinuousSession فشل: ${e.message}")
             destroyRecognizer()
+            mainHandler.postDelayed({ openContinuousSession() }, 1500)
         }
-    }
-
-    private fun closeSessionQuiet(cooldownMs: Long = 1200) {
-        sessionActive = false
-        cooldownUntil = System.currentTimeMillis() + cooldownMs
     }
 
     /** مستقبل تشغيل الشاشة: بعض الواجهات تجمّد الميكروفون والشاشة مطفأة —
@@ -228,9 +134,8 @@ object VoiceManager : RecognitionListener {
             if (!continuousMode) return
             Log.i(TAG, "الشاشة تعمل — إنعاش جلسة الاستماع")
             mainHandler.post {
-                // لا نفتح جلسة بأنفسنا — حارس الطاقة يفتحها عند كلام فعلي
-                sessionActive = false
                 destroyRecognizer()
+                openContinuousSession()
             }
         }
     }
@@ -344,7 +249,7 @@ object VoiceManager : RecognitionListener {
         FloatingOverlayManager.setListening(true)
         Log.i(TAG, "▶ بدأ الاستماع الدائم — نادِ الوكيل بـ \"$wakeWord\"")
 
-        mainHandler.post { startAudioWatchdog() }
+        mainHandler.post { openContinuousSession() }
         return true
     }
 
@@ -364,8 +269,6 @@ object VoiceManager : RecognitionListener {
         }
         pauseMicForTts = false
         mainHandler.removeCallbacks(restartRunnable)
-        stopAudioWatchdog()
-        sessionActive = false
         destroyRecognizer()
         releaseWakeLock()
         notifyListeningState(false)
@@ -388,7 +291,7 @@ object VoiceManager : RecognitionListener {
         if (!continuousMode) return startListening()
         mainHandler.post {
             destroyRecognizer()
-            openSession()
+            openContinuousSession()
         }
         return true
     }
@@ -666,8 +569,7 @@ object VoiceManager : RecognitionListener {
         mainHandler.post {
             if (pauseMicForTts) {
                 pauseMicForTts = false
-                closeSessionQuiet(600)
-                // الحارس يستمع بصمت ويفتح الجلسة عند كلامك التالي
+                openContinuousSession()
             }
         }
     }
@@ -683,7 +585,7 @@ object VoiceManager : RecognitionListener {
         if (pauseMicForTts && continuousMode) {
             Log.w(TAG, "⚠ مؤقّت الأمان: النطق لم يُعد callback — استئناف الميكروفون قسراً")
             pauseMicForTts = false
-            closeSessionQuiet(600)
+            openContinuousSession()
         }
     }
 
@@ -795,10 +697,31 @@ object VoiceManager : RecognitionListener {
 
         lastErrorDesc = description
         lastErrorAt = System.currentTimeMillis()
-        consecutiveErrors++
-        // إغلاق هادئ: الحارس سيفتح جلسة جديدة عند كلام فعلي فقط
-        closeSessionQuiet()
-        destroyRecognizer()
+        when (error) {
+            // صمت/لا مطابق: أعد تدوير نفس المثيل فوراً وبصمت تام
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
+            SpeechRecognizer.ERROR_NO_MATCH,
+            -> {
+                consecutiveErrors = 0
+                mainHandler.post { openContinuousSession() }
+            }
+            // مشغول/عميل/صوت: مثيل جديد نظيف بعد نبضة قصيرة
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+            SpeechRecognizer.ERROR_CLIENT,
+            SpeechRecognizer.ERROR_AUDIO,
+            -> {
+                consecutiveErrors = 0
+                destroyRecognizer()
+                mainHandler.postDelayed({ openContinuousSession() }, 400)
+            }
+            else -> {
+                consecutiveErrors++
+                mainHandler.postDelayed(
+                    { openContinuousSession() },
+                    nextBackoff().coerceAtMost(4000),
+                )
+            }
+        }
     }
 
     override fun onResults(results: Bundle?) {
@@ -819,7 +742,7 @@ object VoiceManager : RecognitionListener {
             return
         }
         if (spoken.isNullOrBlank()) {
-            closeSessionQuiet()
+            mainHandler.postDelayed({ openContinuousSession() }, 300)
             return
         }
         Log.d(TAG, "سُمع: \"$spoken\"")
@@ -862,11 +785,11 @@ object VoiceManager : RecognitionListener {
                 awaitingCommand = true
                 awaitingUntil = System.currentTimeMillis() + 6000
                 FloatingOverlayManager.setStatus("أنصت لك…")
-                closeSessionQuiet(400)
+                mainHandler.postDelayed({ openContinuousSession() }, 300)
             }
             else -> {
                 Log.d(TAG, "كلام بدون اسم النداء — تجاهل صامت")
-                closeSessionQuiet()
+                mainHandler.postDelayed({ openContinuousSession() }, 300)
             }
         }
     }
