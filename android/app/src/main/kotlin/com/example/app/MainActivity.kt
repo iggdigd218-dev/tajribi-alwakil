@@ -36,6 +36,22 @@ class MainActivity : FlutterActivity() {
         autoStartListeningIfPermitted()
     }
 
+    override fun onResume() {
+        super.onResume()
+        VoiceManager.appInForeground = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        VoiceManager.appInForeground = false
+    }
+
+    override fun onDestroy() {
+        // القناة تموت مع المحرك — نصفّها null لتسلك الأوامر مسار الطابور
+        VoiceManager.detachChannel()
+        super.onDestroy()
+    }
+
     /** مثل «هاي جوجل»: الاستماع الدائم يعمل تلقائياً فور منح الميكروفون —
      *  بلا أزرار، ويستجيب لاسم النداء المحفوظ في الإعدادات. */
     private fun autoStartListeningIfPermitted() {

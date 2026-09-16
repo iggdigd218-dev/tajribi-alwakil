@@ -114,8 +114,21 @@ object VoiceManager : RecognitionListener {
     /** جلسة استماع دائمة صامتة على نفس المثيل — بلا إعادة ربط وبلا
      *  أي تغيير واجهة: المؤشر يبقى ثابتاً والميكروفون لا «يفتح ويغلق».
      *  الصمت يُعيد تدوير الجلسة بصمت تام، والكلام يُلتقط من أوله. */
+    private var lastOpenAt = 0L
+    private var opensWithoutReady = 0
+
     private fun openContinuousSession() {
         if (!continuousMode || pauseMicForTts) return
+        val now = System.currentTimeMillis()
+        if (now - lastOpenAt < 700) return // تباعد أدنى بين الجلسات
+        if (opensWithoutReady >= 6) {
+            // عاصفة أخطاء: المحرك يرفض فوراً — استرح 3 ثوانٍ ثم حاول
+            opensWithoutReady = 0
+            mainHandler.postDelayed({ openContinuousSession() }, 3000)
+            return
+        }
+        lastOpenAt = now
+        opensWithoutReady++
         try {
             val current = recognizer ?: createRecognizer().also { recognizer = it }
             current.startListening(recognitionIntent())
@@ -168,6 +181,16 @@ object VoiceManager : RecognitionListener {
      */
     /** أوامر النداء التي وصلت قبل ارتباط قناة Flutter. */
     private val pendingWakeCommands = ArrayDeque<String>(8)
+
+    /** هل واجهة Flutter حية الآن (النشاط ظاهر)؟ يضبطها MainActivity. */
+    @Volatile @JvmStatic var appInForeground = false
+
+    /** تُستدعى عند تدمير النشاط: القناة القديمة ميتة — نصفّها null
+     *  حتى تسلك أوامر النداء مسار الطابور + رفع الواجهة. */
+    @JvmStatic
+    fun detachChannel() {
+        channel = null
+    }
 
     @JvmStatic
     fun init(context: Context, voiceChannel: MethodChannel?) {
@@ -661,6 +684,7 @@ object VoiceManager : RecognitionListener {
 
     override fun onReadyForSpeech(params: Bundle?) {
         consecutiveErrors = 0
+        opensWithoutReady = 0 // الجلسة حية فعلاً
     }
 
     override fun onBeginningOfSpeech() { /* الميكروفون يلتقط كلاماً */ }
@@ -875,9 +899,13 @@ object VoiceManager : RecognitionListener {
     /** استدعاء Dart عبر القناة — دائماً على الخيط الرئيسي. */
     private fun invokeDart(method: String, argument: Any?) {
         mainHandler.post {
-            if (method == "onWakeWordTriggered" && argument is String && channel == null) {
+            if (method == "onWakeWordTriggered" && argument is String) {
                 enqueueWakeCommand(argument)
-                bringAppToForeground(argument)
+                if (appInForeground && channel != null) {
+                    flushPendingWakeCommands() // الواجهة حية — نفّذ فوراً
+                } else {
+                    bringAppToForeground(argument) // المحرك ميت بالخلفية — ارفعها
+                }
                 return@post
             }
             try {

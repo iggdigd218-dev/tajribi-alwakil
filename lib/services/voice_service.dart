@@ -296,10 +296,14 @@ class VoiceService {
   //  الدورة الصوتية الكاملة
   // ═══════════════════════════════════════════
 
+  static int _processingSince = 0;
+
   static Future<void> _processVoiceCommand(String rawCommand) async {
-    // منع تداخل أمرين صوتيين أثناء المعالجة
-    if (_processing) return;
+    // منع تداخل أمرين صوتيين — مع فك تعليق إن علقت معالجة سابقة >45 ث
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_processing && now - _processingSince < 45000) return;
     _processing = true;
+    _processingSince = now;
     try {
       // ── 0) طبقة إعادة الصياغة بالذكاء: نص الاستماع الصوتي كثير
       // الأخطاء — يُمرر للـ AI ليصوغه أمراً واضحاً قبل التحليل، فلا
