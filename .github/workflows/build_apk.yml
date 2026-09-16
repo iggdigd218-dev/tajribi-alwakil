@@ -71,12 +71,14 @@ jobs:
         run: >-
           flutter build apk --debug
           --dart-define=AGENT_BUILTIN_GROQ_KEY=${{ secrets.AGENT_GROQ_KEY }}
+          --dart-define=AGENT_BUILTIN_GEMINI_KEY=${{ secrets.AGENT_GEMINI_KEY }}
           --dart-define=AGENT_ELEVENLABS_KEY=${{ secrets.AGENT_ELEVENLABS_KEY }}
 
       - name: Build release APK
         run: >-
           flutter build apk --release
           --dart-define=AGENT_BUILTIN_GROQ_KEY=${{ secrets.AGENT_GROQ_KEY }}
+          --dart-define=AGENT_BUILTIN_GEMINI_KEY=${{ secrets.AGENT_GEMINI_KEY }}
           --dart-define=AGENT_ELEVENLABS_KEY=${{ secrets.AGENT_ELEVENLABS_KEY }}
 
       - name: Show APK info
