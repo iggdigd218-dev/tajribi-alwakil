@@ -106,6 +106,7 @@ object VoiceManager : RecognitionListener {
     private var lastHeardAt = 0L
     private var awaitingCommand = false
     private var awaitingUntil = 0L
+    private var oneShot = false
 
     /** مستقبل تشغيل الشاشة: بعض الواجهات تجمّد الميكروفون والشاشة مطفأة —
      *  نعيد فتح الجلسة فوراً عند التشغيل لن يبقى النداء حياً. */
@@ -250,6 +251,7 @@ object VoiceManager : RecognitionListener {
     fun stopListening() {
         if (!continuousMode) return
         continuousMode = false
+        oneShot = false
         prefs?.edit()?.putBoolean(KEY_LISTENING_ON, false)?.apply()
         if (screenReceiverRegistered) {
             try {
@@ -269,6 +271,23 @@ object VoiceManager : RecognitionListener {
 
     @JvmStatic
     fun isListening(): Boolean = continuousMode
+
+    /** وضع السماعة (ضغطة واحدة): يلتقط أول كلام مسموع كأمر مباشر دون
+     *  اشتراط اسم النداء، ينفذه فوراً، ثم يصمت عن الالتقاط حتى يستأنف
+     *  الاستماع الدائم بهدوء بعد النطق. */
+    @JvmStatic
+    fun startOneShot(): Boolean {
+        val context = appContext ?: return false
+        if (!hasRecordAudio(context)) return false
+        oneShot = true
+        FloatingOverlayManager.setStatus("أنصت لك… قل أمرك")
+        if (!continuousMode) return startListening()
+        mainHandler.post {
+            destroyRecognizer()
+            startRecognitionSession()
+        }
+        return true
+    }
 
     /** لقطة تشخيصية حيّة لسلسلة الاستماع — تكشف أين تنكسر على الجهاز. */
     @JvmStatic
@@ -686,6 +705,15 @@ object VoiceManager : RecognitionListener {
         if (!spoken.isNullOrBlank()) {
             lastHeard = spoken
             lastHeardAt = System.currentTimeMillis()
+        }
+        // ── وضع السماعة: أول كلام مسموع = أمر مباشر يُنفذ فوراً ──
+        if (oneShot && !spoken.isNullOrBlank()) {
+            oneShot = false
+            pauseMicForTts = true
+            armMicSafetyTimer()
+            FloatingOverlayManager.setStatus("🎙️ $spoken")
+            invokeDart("onWakeWordTriggered", spoken)
+            return
         }
         if (spoken.isNullOrBlank()) {
             scheduleRestart(RESTART_DELAY_MS)

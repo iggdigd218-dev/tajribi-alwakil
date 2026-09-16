@@ -183,6 +183,10 @@ object FloatingOverlayManager {
         layoutParams = params
         statusView = status
         micView = mic
+        mic.setOnClickListener {
+            Log.i(TAG, "🎧 ضغطة السماعة — التقاط أمر واحد وتنفيذه")
+            VoiceManager.startOneShot()
+        }
         showing = true
         applyVisualState()
         Log.i(TAG, "النوافذ العائمة ظاهرة")
