@@ -45,7 +45,7 @@ object VoiceManager : RecognitionListener {
 
     private const val PREFS_NAME = "agent_voice_prefs"
     private const val KEY_WAKE_WORD = "wake_word"
-    private const val DEFAULT_WAKE_WORD = "يا وكيل"
+    private const val DEFAULT_WAKE_WORD = "حمود"
 
     private const val UTTERANCE_ID = "agent_voice_reply"
 

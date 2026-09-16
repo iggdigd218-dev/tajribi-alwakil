@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter/services.dart';
 
@@ -29,7 +30,7 @@ class VoiceService {
   static final ValueNotifier<bool> isListening = ValueNotifier<bool>(false);
 
   /// اسم الوكيل الحالي (Wake-Word) — للعرض والتعديل من الواجهة.
-  static final ValueNotifier<String> wakeWord = ValueNotifier<String>('يا وكيل');
+  static final ValueNotifier<String> wakeWord = ValueNotifier<String>('حمود');
 
   /// تُنبَّه الواجهة عند تنفيذ أمر صوتي (لإضافته كبطاقة في الشات).
   /// تحمل: نص الأمر، النية المنفذة، ونتيجة التنفيذ.
