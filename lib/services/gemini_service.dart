@@ -239,6 +239,13 @@ class GeminiService {
     return '';
   }
 
+  /// لا إعدادات مستخدم ومفتاح جمناي مدمج → هو المحرك الافتراضي مباشرة.
+  static void _applyBuiltInGeminiDefaults() {
+    providerId = 'gemini';
+    endpoint = byId('gemini').endpoint;
+    model = byId('gemini').defaultModel;
+  }
+
   static set apiKey(String? value) => _programmaticKey =
       (value == null || value.trim().isEmpty) ? null : value.trim();
 
@@ -328,11 +335,18 @@ class GeminiService {
             await _settingsChannel.invokeMethod<String>('getGeminiApiKey');
         if (saved != null && saved.trim().isNotEmpty) {
           _programmaticKey = saved.trim();
+        } else if (builtInGeminiKey.isNotEmpty) {
+          _applyBuiltInGeminiDefaults();
         }
         return;
       }
       final pid = (map['provider'] as String?)?.trim();
-      if (pid != null && pid.isNotEmpty) providerId = pid;
+      if (pid != null && pid.isNotEmpty) {
+        providerId = pid;
+      } else if (builtInGeminiKey.isNotEmpty &&
+          (map['apiKey'] as String? ?? '').trim().isEmpty) {
+        _applyBuiltInGeminiDefaults();
+      }
       final ep = (map['endpoint'] as String?)?.trim();
       if (ep != null && ep.isNotEmpty) {
         endpoint = ep;
