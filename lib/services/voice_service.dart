@@ -240,6 +240,20 @@ class VoiceService {
     final clean = text.trim();
     if (clean.isEmpty) return;
     await stopSpeaking();
+    // 1) العينة المدمجة داخل التطبيق — فورية وتعمل دون إنترنت،
+    //    وتُسمع النبرة الحقيقية لكل نمط كما هي تماماً.
+    try {
+      final data = await rootBundle.load('assets/voice_samples/${profile.id}.mp3');
+      final sample = File('${Directory.systemTemp.path}/sample_${profile.id}.mp3');
+      await sample.writeAsBytes(data.buffer.asUint8List(), flush: true);
+      final played =
+          await _channel.invokeMethod<bool>('playAudioFile', sample.path) ??
+              false;
+      if (played) return;
+    } catch (_) {
+      // نتحول للتوليد الحي
+    }
+    // 2) توليد حي بصوت النمط (Edge / ElevenLabs)
     String? path;
     try {
       if (ElevenLabsTtsService.isConfigured) {
