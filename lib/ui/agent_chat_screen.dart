@@ -1,4 +1,5 @@
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;\nimport 'dart:async';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
