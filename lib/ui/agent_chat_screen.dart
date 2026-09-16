@@ -509,7 +509,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                         content: Text(
                           diag,
                           style: const TextStyle(
-                              color: Colors.white82, fontSize: 12, height: 1.7),
+                              color: Colors.white70, fontSize: 12, height: 1.7),
                         ),
                         actions: [
                           TextButton(
