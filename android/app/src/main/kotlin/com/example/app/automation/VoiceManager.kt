@@ -697,7 +697,7 @@ object VoiceManager : RecognitionListener {
         val normalized = normalizeArabic(spoken)
         val normalizedWake = normalizeArabic(wakeWord)
 
-        val command: String? = when {
+        var command: String? = when {
             normalized.startsWith(normalizedWake) ->
                 normalized.substring(normalizedWake.length).trim()
             normalized.contains(normalizedWake) ->
