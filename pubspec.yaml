@@ -4,7 +4,7 @@ description: >-
   AccessibilityService و Shizuku و AlarmManager مع محرك تفكير
   محلي/سحابي (Gemini). صفر تبعيات Dart خارجية.
 publish_to: 'none'
-version: 1.3.18+23
+version: 1.3.19+24
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

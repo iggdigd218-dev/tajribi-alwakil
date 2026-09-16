@@ -110,6 +110,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
   // ═══ الضغط للتحدث: أمسك الزر وتكلم — أفلته فينتهي التسجيل وتصل الإجابة ═══
   Future<void> _startRecording() async {
     if (_sending || _recording) return;
+    HapticFeedback.mediumImpact();
     final ok = await VoiceService.startPushToTalk();
     if (!ok || !mounted) return;
     setState(() => _recording = true);
@@ -1297,7 +1298,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
               decoration: InputDecoration(
                 hintText: _recording
                     ? '🎙️ أستمع إليك… أفلت الزر للإرسال'
-                    : 'اكتب أمراً… أو أمسك زر الميكروفون وتكلم',
+                    : 'المس الميكروفون وتكلم — ارفع إصبعك للإرسال',
                 hintStyle: const TextStyle(color: Color(0xFF5A7A96)),
                 filled: true,
                 fillColor: Color(0xFF0E1621),
@@ -1311,9 +1312,10 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          GestureDetector(
-            onLongPressStart: (_) => _startRecording(),
-            onLongPressEnd: (_) => _stopRecording(),
+          Listener(
+            onPointerDown: (_) => _startRecording(),
+            onPointerUp: (_) => _stopRecording(),
+            onPointerCancel: (_) => _stopRecording(),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               width: 44,
