@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;\nimport 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -26,11 +26,14 @@ class _ChatEntry {
   _ChatEntry.user(this.text)
       : isUser = true,
         result = null;
-  _ChatEntry.agent({this.text, this.result}) : isUser = false;
+  _ChatEntry.agent({this.text, this.result, this.source}) : isUser = false;
 
   final bool isUser;
-  final String? text;
+  String? text;
   final AgentDispatchResult? result;
+
+  /// من الذي رد؟ (Groq / Gemini / وكيل الأتمتة / الوكيل المحلي)
+  final String? source;
   AgentActionIntent? pendingIntent;
 }
 
@@ -109,7 +112,11 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       _sending = true;
     });
     _scrollToBottom();
+    await _runPipeline(text);
+  }
 
+  /// مسارات معالجة طلب نصي مُضاف مسبقاً (إرسال جديد أو إعادة بعد تعديل).
+  Future<void> _runPipeline(String text) async {
     try {
       await GeminiService.loadSavedKey();
 
@@ -121,7 +128,10 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       // يستقبل النص الخام، يصيغ الأمر الواضح، ووكيل الأتمتة ينفذه.
       GeminiVoiceOutcome? cloud;
       if (GeminiService.isConfigured) {
-        cloud = await GeminiService.processVoiceCommand(text);
+        cloud = await GeminiService.processVoiceCommand(
+          text,
+          history: _recentHistory(text),
+        );
         if (!mounted) return;
         if (!cloud.hasError ||
             cloud.reply.isNotEmpty ||
@@ -129,7 +139,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
           final reply = cloud.reply;
           final actions = cloud.actions;
           if (reply.isNotEmpty) {
-            setState(() => _entries.add(_ChatEntry.agent(text: reply)));
+            setState(() => _entries.add(_ChatEntry.agent(text: reply, source: GeminiService.providerLabel)));
             await VoiceService.speak(reply);
           }
           for (final actionIntent in actions) {
@@ -161,7 +171,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       final offline = await OfflineAssistant.respond(commandText);
       if (!mounted) return;
       if (offline.match != OfflineMatch.none) {
-        setState(() => _entries.add(_ChatEntry.agent(text: offline.displayText)));
+        setState(() => _entries.add(_ChatEntry.agent(text: offline.displayText, source: 'الوكيل المحلي')));
         if (offline.reply.isNotEmpty) await VoiceService.speak(offline.reply);
         for (final a in offline.actions) {
           await _dispatchIntent(a);
@@ -178,14 +188,14 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
         );
         if (!mounted) return;
         setState(() {
-          _entries.add(_ChatEntry.agent(text: recovered.displayText));
+          _entries.add(_ChatEntry.agent(text: recovered.displayText, source: 'الوكيل المحلي'));
         });
         for (final a in recovered.actions) {
           await _dispatchIntent(a);
         }
         return;
       }
-      setState(() => _entries.add(_ChatEntry.agent(text: offline.displayText)));
+      setState(() => _entries.add(_ChatEntry.agent(text: offline.displayText, source: 'الوكيل المحلي')));
       if (offline.reply.isNotEmpty) await VoiceService.speak(offline.reply);
     } finally {
       if (mounted) {
@@ -195,9 +205,110 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     }
   }
 
+  /// آخر 10 جولات حوارية (بدون الجولة الحالية) — ليناقش ويرجع للسياق
+  /// مثل ChatGPT بدل أن يبدأ كل رسالة من الصفر.
+  List<Map<String, Object?>> _recentHistory(String current) {
+    final conv = _entries
+        .where((e) => e.text != null && e.text!.trim().isNotEmpty)
+        .toList();
+    if (conv.isNotEmpty && conv.last.isUser && conv.last.text == current) {
+      conv.removeLast();
+    }
+    final last = conv.length > 10 ? conv.sublist(conv.length - 10) : conv;
+    return [
+      for (final e in last)
+        {'role': e.isUser ? 'user' : 'assistant', 'text': e.text!},
+    ];
+  }
+
+  /// ضغط مطوّل على رسالة: نسخ / تعديل وإعادة إرسال / حذف.
+  Future<void> _messageMenu(int index) async {
+    final entry = _entries[index];
+    final label = entry.text ?? entry.result?.message ?? '';
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF16222F),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.copy, color: Colors.white70),
+              title: const Text('نسخ', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                Clipboard.setData(ClipboardData(text: label));
+                _showSnack('نُسخت الرسالة 📋');
+              },
+            ),
+            if (entry.isUser)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined, color: Colors.white70),
+                title: const Text('تعديل وإعادة الإرسال',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _editAndResend(index);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Color(0xFFE05B4C)),
+              title: const Text('حذف', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() => _entries.removeAt(index));
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// تعديل رسالة مستخدم ثم حذف ما بعدها وإعادة المعالجة من جديد.
+  Future<void> _editAndResend(int index) async {
+    final entry = _entries[index];
+    final controller = TextEditingController(text: entry.text ?? '');
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131F2E),
+        title: const Text('تعديل الرسالة',
+            style: TextStyle(color: Colors.white, fontSize: 15)),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'نص الرسالة',
+            hintStyle: TextStyle(color: Colors.white38),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('تعديل وإرسال'),
+          ),
+        ],
+      ),
+    );
+    if (saved == null || saved.isEmpty || _sending) return;
+    setState(() {
+      entry.text = saved;
+      if (index + 1 < _entries.length) {
+        _entries.removeRange(index + 1, _entries.length);
+      }
+    });
+    await _runPipeline(saved);
+  }
+
   Future<void> _dispatchIntent(AgentActionIntent intent) async {
     final result = await AgentDispatcher.execute(intent);
-    final entry = _ChatEntry.agent(result: result);
+    final entry = _ChatEntry.agent(result: result, source: 'وكيل الأتمتة');
     if (result.status == AgentDispatchStatus.needsConfirmation) {
       entry.pendingIntent = intent;
     }
@@ -1089,7 +1200,7 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
       itemCount: _entries.length,
       itemBuilder: (context, index) {
         final entry = _entries[index];
-        return entry.isUser
+        final Widget bubble = entry.isUser
             ? _UserBubble(text: entry.text ?? '')
             : _AgentMessage(
                 entry: entry,
@@ -1100,6 +1211,37 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                     ? () => _cancelExecution(entry.pendingIntent!)
                     : null,
               );
+        final Widget withBadge = (!entry.isUser && entry.source != null)
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 6, 0, 0),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.smart_toy_outlined,
+                            size: 11, color: Color(0xFF7FD1DA)),
+                        const SizedBox(width: 3),
+                        Text(
+                          entry.source!,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF7FD1DA),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  bubble,
+                ],
+              )
+            : bubble;
+        return GestureDetector(
+          onLongPress: () => _messageMenu(index),
+          child: withBadge,
+        );
       },
     );
   }
