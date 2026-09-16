@@ -82,7 +82,26 @@ class AgentForegroundService : Service() {
 
         // إعادة التشغيل التلقائي إن قتلها النظام — ومعها يستأنف الاستماع
         VoiceManager.resumeIfWasListening()
+        armListeningWatchdog()
         return START_STICKY
+    }
+
+    /** فحص كل 5 دقائق: إن كان الاستماع مفترضاً أن يعمل ومات — يُستأنف. */
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    private fun armListeningWatchdog() {
+        handler.removeCallbacks(listeningWatchdog)
+        handler.postDelayed(listeningWatchdog, 5 * 60_000)
+    }
+
+    private val listeningWatchdog = object : Runnable {
+        override fun run() {
+            if (!VoiceManager.isListening()) {
+                VoiceManager.logEvent("FGS_WATCH", "الاستماع ميت — استئناف")
+                VoiceManager.resumeIfWasListening()
+            }
+            handler.postDelayed(this, 5 * 60_000)
+        }
     }
 
     /**

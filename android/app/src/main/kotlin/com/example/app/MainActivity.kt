@@ -137,6 +137,14 @@ class MainActivity : FlutterActivity() {
 
             "getListeningDiagnostics" -> result.success(VoiceManager.getDiagnostics())
 
+            "logEvent" -> {
+                VoiceManager.logEvent(
+                    call.argument<String>("t") ?: "DART",
+                    call.argument<String>("d") ?: "",
+                )
+                result.success(null)
+            }
+
             "hasRecordAudioPermission" -> result.success(hasRecordAudioPermission())
 
             // يفتح نافذة الصلاحية ويردّ النتيجة عند إغلاقها

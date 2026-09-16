@@ -114,6 +114,21 @@ object VoiceManager : RecognitionListener {
     /** جلسة استماع دائمة صامتة على نفس المثيل — بلا إعادة ربط وبلا
      *  أي تغيير واجهة: المؤشر يبقى ثابتاً والميكروفون لا «يفتح ويغلق».
      *  الصمت يُعيد تدوير الجلسة بصمت تام، والكلام يُلتقط من أوله. */
+    // ═══ الصندوق الأسود: آخر 40 حدثاً للاستماع (لتشخيص أي جمود) ═══
+    private val eventLog = ArrayDeque<String>(40)
+    private var lastReadyAt = 0L
+
+    @JvmStatic
+    fun logEvent(type: String, detail: String = "") {
+        val t = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date())
+        synchronized(eventLog) {
+            if (eventLog.size >= 40) eventLog.removeFirst()
+            eventLog.addLast("$t $type $detail")
+        }
+        Log.i(TAG, "[$type] $detail")
+    }
+
     private var lastOpenAt = 0L
     private var opensWithoutReady = 0
 
@@ -132,7 +147,9 @@ object VoiceManager : RecognitionListener {
         try {
             val current = recognizer ?: createRecognizer().also { recognizer = it }
             current.startListening(recognitionIntent())
+            logEvent("OPEN")
         } catch (e: Exception) {
+            logEvent("OPEN_FAIL", "${e.message}")
             Log.e(TAG, "openContinuousSession فشل: ${e.message}")
             destroyRecognizer()
             mainHandler.postDelayed({ openContinuousSession() }, 1500)
@@ -270,9 +287,11 @@ object VoiceManager : RecognitionListener {
         notifyListeningState(true)
         FloatingOverlayManager.showIfPossible(context)
         FloatingOverlayManager.setListening(true)
-        Log.i(TAG, "▶ بدأ الاستماع الدائم — نادِ الوكيل بـ \"$wakeWord\"")
+        logEvent("START", "الاستماع الدائم بدأ — النداء: $wakeWord")
 
         mainHandler.post { openContinuousSession() }
+        lastReadyAt = System.currentTimeMillis()
+        armSessionHealer()
         return true
     }
 
@@ -296,7 +315,7 @@ object VoiceManager : RecognitionListener {
         releaseWakeLock()
         notifyListeningState(false)
         FloatingOverlayManager.setListening(false)
-        Log.i(TAG, "■ توقف الاستماع الدائم")
+        logEvent("STOP", "الاستماع توقف")
     }
 
     @JvmStatic
@@ -341,11 +360,34 @@ object VoiceManager : RecognitionListener {
             if (lastHeardAt > 0) append(" (قبل ").append((now - lastHeardAt) / 1000).append(" ث)")
             append('\n')
             append("إعفاء البطارية: ").append(if (batteryOk) "ممنوح ✅" else "غير ممنوح ❌ — هذا يقتل الاستماع بالخلفية!")
+            append("\n\n── آخر الأحداث (الأحدث أسفل) ──\n")
+            synchronized(eventLog) {
+                for (line in eventLog.takeLast(18)) append(line).append('\n')
+            }
         }
     }
 
     /** يستأنف الاستماع إن كان مفعلاً قبل أن يقتل النظام العملية —
      *  تستدعيه الخدمة الأمامية عند إعادة تشغيلها اللزج (START_STICKY). */
+    /** بعث الجلسة إن صمتّت 90 ثانية بلا READY — موت صامت للمتعرف. */
+    private fun armSessionHealer() {
+        mainHandler.removeCallbacks(healerRunnable)
+        mainHandler.postDelayed(healerRunnable, 60_000)
+    }
+
+    private val healerRunnable = object : Runnable {
+        override fun run() {
+            if (!continuousMode) return
+            val silent = System.currentTimeMillis() - lastReadyAt
+            if (lastReadyAt > 0 && silent > 90_000) {
+                logEvent("HEAL", "جلسة صامتة ${silent / 1000} ث — إعادة بناء")
+                destroyRecognizer()
+                openContinuousSession()
+            }
+            mainHandler.postDelayed(this, 60_000)
+        }
+    }
+
     @JvmStatic
     fun resumeIfWasListening() {
         val context = appContext ?: return
@@ -685,6 +727,8 @@ object VoiceManager : RecognitionListener {
     override fun onReadyForSpeech(params: Bundle?) {
         consecutiveErrors = 0
         opensWithoutReady = 0 // الجلسة حية فعلاً
+        lastReadyAt = System.currentTimeMillis()
+        logEvent("READY")
     }
 
     override fun onBeginningOfSpeech() { /* الميكروفون يلتقط كلاماً */ }
@@ -711,7 +755,7 @@ object VoiceManager : RecognitionListener {
             SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "انتهت مهلة الكلام"
             else -> "خطأ غير معروف ($error)"
         }
-        Log.w(TAG, "onError: $description")
+        logEvent("ERR", "$description($error)")
 
         if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
             notifyVoiceError("صلاحية الميكروفون سُحبت — تم إيقاف الاستماع")
@@ -769,7 +813,7 @@ object VoiceManager : RecognitionListener {
             mainHandler.postDelayed({ openContinuousSession() }, 300)
             return
         }
-        Log.d(TAG, "سُمع: \"$spoken\"")
+        logEvent("HEARD", spoken.take(40))
 
         // ── كشف اسم النداء على النص المُطبَّع ──
         val normalized = normalizeArabic(spoken)
@@ -794,7 +838,7 @@ object VoiceManager : RecognitionListener {
 
         when {
             !command.isNullOrBlank() -> {
-                Log.i(TAG, "🎙️ اسم النداء مكتشف — الأمر: \"$command\"")
+                logEvent("WAKE", command.take(40))
                 awaitingCommand = false
                 // هدوء تام أثناء التنفيذ والنطق — لا فتح/إغلاق مجنون؛
                 // يُستأنف الاستماع تلقائياً بعد انتهاء النطق.

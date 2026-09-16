@@ -75,6 +75,10 @@ class VoiceService {
     switch (call.method) {
       case 'onWakeWordTriggered':
         final command = call.arguments as String? ?? '';
+        _channel.invokeMethod<void>('logEvent', {
+          't': 'DART_ACK',
+          'd': command.length > 40 ? command.substring(0, 40) : command,
+        });
         if (command.trim().isNotEmpty) {
           await _processVoiceCommand(command.trim());
         }
