@@ -33,6 +33,18 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         requestBatteryExemptionOnce()
+        autoStartListeningIfPermitted()
+    }
+
+    /** مثل «هاي جوجل»: الاستماع الدائم يعمل تلقائياً فور منح الميكروفون —
+     *  بلا أزرار، ويستجيب لاسم النداء المحفوظ في الإعدادات. */
+    private fun autoStartListeningIfPermitted() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            VoiceManager.init(applicationContext, null)
+            VoiceManager.startListening()
+        }
     }
 
     /** يطلب إعفاء التطبيق من تحسينات البطارية مرة واحدة — ضروري على
@@ -176,6 +188,7 @@ class MainActivity : FlutterActivity() {
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             pendingAudioPermissionResult?.success(granted)
             pendingAudioPermissionResult = null
+            if (granted) autoStartListeningIfPermitted()
         }
     }
 

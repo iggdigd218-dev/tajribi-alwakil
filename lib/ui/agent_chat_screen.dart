@@ -251,17 +251,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
     _scrollToBottom();
   }
 
-  Future<void> _toggleListening() async {
-    if (VoiceService.isListening.value) {
-      await VoiceService.stopListening();
-      _showSnack('تم إيقاف الاستماع الصوتي');
-    } else {
-      final ok = await VoiceService.startListening();
-      if (!ok) {
-        _showSnack('تعذر بدء الاستماع — تأكد من منح صلاحية الميكروفون');
-      }
-    }
-  }
 
   InputDecoration _fieldDecoration({required String hint, Widget? suffix}) {
     return InputDecoration(
@@ -644,33 +633,12 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
                   style: TextStyle(color: Colors.white38, fontSize: 11),
                 ),
                 const Divider(color: Color(0xFF22344A), height: 28),
-                ValueListenableBuilder<bool>(
-                  valueListenable: VoiceService.isListening,
-                  builder: (context, listeningValue, _) => SwitchListTile(
-                    value: listeningValue,
-                    onChanged: (value) async {
-                      if (value) {
-                        final ok = await VoiceService.startListening();
-                        if (!ok) {
-                          _showSnack(
-                              'تعذر بدء الاستماع — تأكد من صلاحية الميكروفون');
-                          return;
-                        }
-                      } else {
-                        await VoiceService.stopListening();
-                      }
-                    },
-                    activeColor: const Color(0xFF35C77B),
-                    title: const Text(
-                      'الاستماع الدائم',
-                      style: TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                    subtitle: const Text(
-                      'يعمل والشاشة مغلقة (يستهلك البطارية)',
-                      style: TextStyle(color: Colors.white38, fontSize: 11),
-                    ),
-                    contentPadding: EdgeInsets.zero,
-                  ),
+                // الاستماع الدائم يعمل تلقائياً كـ«هاي جوجل» بلا مفتاح —
+                // يسمع اسم النداء المحفوظ أعلاه ويستجيب بالتطبيق والخلفية.
+                const Text(
+                  'الاستماع تلقائي دائم: يعمل داخل التطبيق وبالخلفية والشاشة '
+                  'مقفلة، ويستجيب فور سماع اسم النداء المحفوظ أعلاه.',
+                  style: TextStyle(color: Colors.white38, fontSize: 11, height: 1.6),
                 ),
                 const Divider(color: Color(0xFF22344A), height: 28),
                 FutureBuilder<bool>(
@@ -1098,20 +1066,6 @@ class _AgentChatScreenState extends State<AgentChatScreen> {
             ),
           ),
           const Spacer(),
-          ValueListenableBuilder<bool>(
-            valueListenable: VoiceService.isListening,
-            builder: (context, listening, _) => IconButton(
-              onPressed: _toggleListening,
-              tooltip: listening ? 'إيقاف الاستماع' : 'بدء الاستماع الصوتي',
-              icon: Icon(
-                listening ? Icons.mic : Icons.mic_none,
-                color: listening
-                    ? const Color(0xFF35C77B)
-                    : const Color(0xFF5A7A96),
-                size: 22,
-              ),
-            ),
-          ),
           IconButton(
             onPressed: _showSettingsDialog,
             tooltip: 'الإعدادات',
