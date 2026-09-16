@@ -99,6 +99,26 @@ object VoiceManager : RecognitionListener {
     private var recognizer: SpeechRecognizer? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var consecutiveErrors = 0
+    private const val KEY_LISTENING_ON = "listening_on"
+
+    /** مستقبل تشغيل الشاشة: بعض الواجهات تجمّد الميكروفون والشاشة مطفأة —
+     *  نعيد فتح الجلسة فوراً عند التشغيل لن يبقى النداء حياً. */
+    private val screenReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            if (intent?.action != android.content.Intent.ACTION_SCREEN_ON) return
+            if (!continuousMode) return
+            Log.i(TAG, "الشاشة تعمل — إنعاش جلسة الاستماع")
+            mainHandler.post {
+                try {
+                    destroyRecognizer()
+                    startRecognitionSession()
+                } catch (e: Exception) {
+                    scheduleRestart(nextBackoff())
+                }
+            }
+        }
+    }
+    private var screenReceiverRegistered = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -191,6 +211,18 @@ object VoiceManager : RecognitionListener {
         }
 
         acquireWakeLock()
+        prefs?.edit()?.putBoolean(KEY_LISTENING_ON, true)?.apply()
+        if (!screenReceiverRegistered) {
+            try {
+                context.registerReceiver(
+                    screenReceiver,
+                    android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_ON),
+                )
+                screenReceiverRegistered = true
+            } catch (e: Exception) {
+                Log.w(TAG, "تعذر تسجيل مستقبل الشاشة: ${e.message}")
+            }
+        }
         notifyListeningState(true)
         FloatingOverlayManager.showIfPossible(context)
         FloatingOverlayManager.setListening(true)
@@ -212,6 +244,14 @@ object VoiceManager : RecognitionListener {
     fun stopListening() {
         if (!continuousMode) return
         continuousMode = false
+        prefs?.edit()?.putBoolean(KEY_LISTENING_ON, false)?.apply()
+        if (screenReceiverRegistered) {
+            try {
+                appContext?.unregisterReceiver(screenReceiver)
+            } catch (_: Exception) {
+            }
+            screenReceiverRegistered = false
+        }
         pauseMicForTts = false
         mainHandler.removeCallbacks(restartRunnable)
         destroyRecognizer()
@@ -223,6 +263,18 @@ object VoiceManager : RecognitionListener {
 
     @JvmStatic
     fun isListening(): Boolean = continuousMode
+
+    /** يستأنف الاستماع إن كان مفعلاً قبل أن يقتل النظام العملية —
+     *  تستدعيه الخدمة الأمامية عند إعادة تشغيلها اللزج (START_STICKY). */
+    @JvmStatic
+    fun resumeIfWasListening() {
+        val context = appContext ?: return
+        val on = prefs?.getBoolean(KEY_LISTENING_ON, false) ?: false
+        if (!on || continuousMode) return
+        if (!hasRecordAudio(context)) return
+        Log.i(TAG, "استئناف تلقائي للاستماع الدائم بعد إعادة تشغيل الخدمة")
+        startListening()
+    }
 
     // ═══════════════════════════════════════════
     //  النطق (TTS رجالي)

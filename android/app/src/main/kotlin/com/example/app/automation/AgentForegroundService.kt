@@ -80,7 +80,8 @@ class AgentForegroundService : Service() {
         startInForeground()
         FloatingOverlayManager.showIfPossible(this)
 
-        // إعادة التشغيل التلقائي إن قتلها النظام
+        // إعادة التشغيل التلقائي إن قتلها النظام — ومعها يستأنف الاستماع
+        VoiceManager.resumeIfWasListening()
         return START_STICKY
     }
 

@@ -1,5 +1,6 @@
 package com.example.app
 
+import android.content.Context
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -27,6 +28,36 @@ class MainActivity : FlutterActivity() {
 
     private companion object {
         const val RC_RECORD_AUDIO = 3001
+    }
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        requestBatteryExemptionOnce()
+    }
+
+    /** يطلب إعفاء التطبيق من تحسينات البطارية مرة واحدة — ضروري على
+     *  واجهات Transsion وغيرها لتبقى خدمة الاستماع حية بالشاشة المقفلة. */
+    private fun requestBatteryExemptionOnce() {
+        try {
+            val prefs = getSharedPreferences("agent_settings", Context.MODE_PRIVATE)
+            if (prefs.getBoolean("asked_battery", false)) return
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
+                !pm.isIgnoringBatteryOptimizations(packageName)
+            ) {
+                prefs.edit().putBoolean("asked_battery", true).apply()
+                startActivity(
+                    android.content.Intent(
+                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        android.net.Uri.parse("package:$packageName"),
+                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            } else {
+                prefs.edit().putBoolean("asked_battery", true).apply()
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "طلب إعفاء البطارية تعذر: ${e.message}")
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
