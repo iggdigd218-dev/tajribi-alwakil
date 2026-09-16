@@ -1,4 +1,5 @@
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart'
+    show Clipboard, ClipboardData, HapticFeedback;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
